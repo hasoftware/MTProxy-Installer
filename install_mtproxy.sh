@@ -418,12 +418,17 @@ load_config() {
     
     # Tìm và đọc phần config
     if grep -q "#=== CONFIG SECTION ===" "$SCRIPT_PATH"; then
-        # Tạo file temp để source (bỏ qua dòng comment đầu tiên)
+        # Tạo file temp để source - chỉ lấy các dòng biến (bắt đầu bằng chữ cái và có dấu =)
         TEMP_CONFIG=$(mktemp)
-        awk '/#=== CONFIG SECTION ===/{flag=1; next} flag' "$SCRIPT_PATH" > "$TEMP_CONFIG"
         
-        # Source config
-        source "$TEMP_CONFIG"
+        # Lấy phần sau #=== CONFIG SECTION === và chỉ lấy các dòng biến hợp lệ
+        awk '/#=== CONFIG SECTION ===/{flag=1; next} flag' "$SCRIPT_PATH" | \
+        grep -E '^[A-Z_]+=' > "$TEMP_CONFIG"
+        
+        # Source config nếu file không rỗng
+        if [ -s "$TEMP_CONFIG" ]; then
+            source "$TEMP_CONFIG"
+        fi
         rm -f "$TEMP_CONFIG"
         
         if [ ! -z "$PROMO_CHANNEL" ]; then
