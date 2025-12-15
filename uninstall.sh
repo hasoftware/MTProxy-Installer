@@ -210,19 +210,17 @@ check_remaining_files() {
     fi
 }
 
-# Hàm main
+# Main function
 main() {
     echo ""
-    log_info "Bắt đầu gỡ cài đặt MTProxy..."
+    log_info "Starting MTProxy uninstallation..."
     echo ""
     
-    # Kiểm tra quyền root
     if [ "$EUID" -ne 0 ]; then
-        log_error "Vui lòng chạy script với quyền root (sudo)"
+        log_error "Please run script with root privileges (sudo)"
         exit 1
     fi
     
-    # Xác nhận
     confirm_uninstall
     
     remove_service
