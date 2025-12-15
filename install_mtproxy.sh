@@ -290,20 +290,9 @@ create_service() {
         systemctl daemon-reload
     fi
     
-    # Xây dựng command với các option giống script của bạn
-    # Format: mtproto-proxy -H <port> -M <workers> <config-file>
-    EXEC_START="$MT_PROXY_BIN"
-    
-    # Thêm HTTP port option
-    EXEC_START="$EXEC_START -H $PROXY_PORT"
-    
-    # Thêm workers nếu được cấu hình
-    if [ ! -z "$WORKERS" ]; then
-        EXEC_START="$EXEC_START -M $WORKERS"
-    fi
-    
-    # Thêm config file ở cuối
-    EXEC_START="$EXEC_START $MT_PROXY_CONFIG"
+    # Xây dựng command - chỉ truyền config file (port và workers đã có trong config)
+    # Format đơn giản: mtproto-proxy <config-file>
+    EXEC_START="$MT_PROXY_BIN $MT_PROXY_CONFIG"
     
     cat > $SERVICE_FILE << EOF
 [Unit]
@@ -379,6 +368,15 @@ start_service() {
             log_info "  $line"
         fi
     done < "$MT_PROXY_CONFIG"
+    
+    # Test chạy MTProxy trực tiếp để xem lỗi
+    log_info "Đang test chạy MTProxy để kiểm tra config..."
+    cd $MT_PROXY_DIR
+    if $MT_PROXY_BIN -H $PROXY_PORT $MT_PROXY_CONFIG 2>&1 | head -10; then
+        log_info "Test chạy thành công"
+    else
+        log_warning "Test chạy có lỗi, nhưng sẽ tiếp tục khởi động service..."
+    fi
     
     systemctl restart mtproxy
     
