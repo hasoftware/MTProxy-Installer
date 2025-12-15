@@ -241,17 +241,24 @@ create_config() {
         # Thêm workers nếu được cấu hình
         if [ ! -z "$WORKERS" ]; then
             echo "workers=$WORKERS"
-            log_info "Workers được cấu hình: $WORKERS"
-        else
-            log_info "Workers: không giới hạn"
         fi
         
         # Thêm promo channel nếu có
         if [ ! -z "$PROMO_CHANNEL" ]; then
             echo "promo=$PROMO_CHANNEL"
-            log_success "Đã thêm Channel Promo: $PROMO_CHANNEL"
         fi
     } > $MT_PROXY_CONFIG
+    
+    # Log thông tin (sau khi đã tạo file)
+    if [ ! -z "$WORKERS" ]; then
+        log_info "Workers được cấu hình: $WORKERS"
+    else
+        log_info "Workers: không giới hạn"
+    fi
+    
+    if [ ! -z "$PROMO_CHANNEL" ]; then
+        log_success "Đã thêm Channel Promo: $PROMO_CHANNEL"
+    fi
     
     log_success "Đã tạo cấu hình"
     log_info "Nội dung config:"
@@ -306,11 +313,16 @@ start_service() {
         exit 1
     fi
     
-    # Test chạy binary với config để xem lỗi
-    log_info "Đang kiểm tra cấu hình..."
-    if ! $MT_PROXY_BIN -c $MT_PROXY_CONFIG --test 2>&1 | head -5; then
-        # Nếu --test không hỗ trợ, thử chạy trực tiếp và capture lỗi
-        log_warning "Không thể test config, đang thử khởi động service..."
+    # Kiểm tra config file có hợp lệ không (đọc được và không rỗng)
+    if [ ! -s "$MT_PROXY_CONFIG" ]; then
+        log_error "Config file rỗng hoặc không hợp lệ!"
+        exit 1
+    fi
+    
+    # Kiểm tra config có chứa secret và port không
+    if ! grep -q "^secret=" "$MT_PROXY_CONFIG" || ! grep -q "^port=" "$MT_PROXY_CONFIG"; then
+        log_error "Config file thiếu secret hoặc port!"
+        exit 1
     fi
     
     systemctl restart mtproxy
