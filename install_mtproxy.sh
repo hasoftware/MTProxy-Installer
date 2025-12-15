@@ -13,15 +13,17 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Biến cấu hình
-MT_PROXY_DIR="/opt/mtproxy"
+MT_PROXY_DIR="/opt/MTProxy"
 MT_PROXY_BIN="$MT_PROXY_DIR/mtproto-proxy"
 MT_PROXY_CONFIG="$MT_PROXY_DIR/proxy-multi.conf"
-MT_PROXY_SECRET="$MT_PROXY_DIR/secret"
+MT_PROXY_SECRET_FILE="$MT_PROXY_DIR/secret"
 MT_PROXY_AES_PWD="$MT_PROXY_DIR/proxy-secret"
-SERVICE_FILE="/etc/systemd/system/mtproxy.service"
+SERVICE_FILE="/etc/systemd/system/MTProxy.service"
+MT_PROXY_USER="mtproxy"
 PROMO_CHANNEL=""
-PROXY_PORT=443
-WORKERS="1"  # Mặc định 1 worker như script của bạn
+PROXY_PORT=8443  # Port mặc định theo hướng dẫn
+STATS_PORT=8888  # Port cho HTTP stats
+WORKERS="1"
 
 # Hàm log
 log_info() {
@@ -111,14 +113,15 @@ install_dependencies() {
 install_mtproxy() {
     log_info "Đang tải và compile MTProxy..."
     
-    # Tạo thư mục
-    mkdir -p $MT_PROXY_DIR
-    cd $MT_PROXY_DIR
+    # Tạo thư mục làm việc tạm
+    WORK_DIR="/tmp/mtproxy_build"
+    mkdir -p $WORK_DIR
+    cd $WORK_DIR
     
-    # Clone repository
+    # Clone repository từ fork community (theo hướng dẫn)
     if [ ! -d "MTProxy" ]; then
-        log_info "Đang clone MTProxy repository..."
-        git clone https://github.com/TelegramMessenger/MTProxy.git
+        log_info "Đang clone MTProxy repository (community fork)..."
+        git clone https://github.com/GetPageSpeed/MTProxy.git
     else
         log_info "Repository đã tồn tại, đang cập nhật..."
         cd MTProxy
@@ -128,12 +131,23 @@ install_mtproxy() {
     
     cd MTProxy
     
+    # Sửa Makefile để thêm -fcommon flag (theo hướng dẫn)
+    log_info "Đang sửa Makefile..."
+    if ! grep -q "-fcommon" Makefile; then
+        sed -i 's/COMMON_CFLAGS =/COMMON_CFLAGS = -fcommon/' Makefile
+        sed -i 's/COMMON_LDFLAGS =/COMMON_LDFLAGS = -fcommon/' Makefile
+        log_success "Đã thêm -fcommon flag vào Makefile"
+    fi
+    
     # Compile
     log_info "Đang compile MTProxy (có thể mất vài phút)..."
     if ! make -j$(nproc); then
         log_error "Compile thất bại!"
         exit 1
     fi
+    
+    # Tạo thư mục cài đặt
+    mkdir -p $MT_PROXY_DIR
     
     # Copy binary
     cp objs/bin/mtproto-proxy $MT_PROXY_BIN
@@ -142,42 +156,78 @@ install_mtproxy() {
     log_success "Đã compile MTProxy thành công"
 }
 
-# Hàm tạo secret (hex format như script của bạn)
+# Hàm download proxy-secret và proxy-multi.conf từ Telegram
+download_telegram_files() {
+    log_info "Đang tải các file cấu hình từ Telegram..."
+    
+    # Download proxy-secret
+    if [ ! -f "$MT_PROXY_AES_PWD" ]; then
+        curl -s https://core.telegram.org/getProxySecret -o "$MT_PROXY_AES_PWD"
+        if [ $? -eq 0 ] && [ -s "$MT_PROXY_AES_PWD" ]; then
+            log_success "Đã tải proxy-secret từ Telegram"
+        else
+            log_error "Không thể tải proxy-secret!"
+            exit 1
+        fi
+    else
+        log_info "proxy-secret đã tồn tại"
+    fi
+    
+    # Download proxy-multi.conf
+    if [ ! -f "$MT_PROXY_CONFIG" ]; then
+        curl -s https://core.telegram.org/getProxyConfig -o "$MT_PROXY_CONFIG"
+        if [ $? -eq 0 ] && [ -s "$MT_PROXY_CONFIG" ]; then
+            log_success "Đã tải proxy-multi.conf từ Telegram"
+        else
+            log_error "Không thể tải proxy-multi.conf!"
+            exit 1
+        fi
+    else
+        log_info "proxy-multi.conf đã tồn tại"
+    fi
+}
+
+# Hàm tạo secret (hex format theo hướng dẫn)
 generate_secret() {
     log_info "Đang tạo secret..."
     
-    if [ ! -f "$MT_PROXY_SECRET" ]; then
-        # Tạo secret ở hex format: 16 bytes = 32 hex characters (giống script của bạn)
-        if command -v openssl &> /dev/null; then
+    if [ ! -f "$MT_PROXY_SECRET_FILE" ]; then
+        # Tạo secret: 16 bytes random, convert sang hex (theo hướng dẫn)
+        # Format: head -c 16 /dev/urandom | xxd -ps
+        if command -v xxd &> /dev/null; then
+            SECRET_HEX=$(head -c 16 /dev/urandom | xxd -ps)
+            echo "$SECRET_HEX" > $MT_PROXY_SECRET_FILE
+            log_success "Đã tạo secret mới (hex format)"
+        elif command -v openssl &> /dev/null; then
             SECRET_HEX=$(openssl rand -hex 16)
-            echo "$SECRET_HEX" > $MT_PROXY_SECRET
+            echo "$SECRET_HEX" > $MT_PROXY_SECRET_FILE
             log_success "Đã tạo secret mới (hex format)"
         else
-            log_error "Cần openssl để tạo secret!"
+            log_error "Cần xxd hoặc openssl để tạo secret!"
             exit 1
         fi
     else
         log_info "Sử dụng secret hiện có"
     fi
     
-    SECRET_HEX=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
+    SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     log_info "Secret (hex): $SECRET_HEX"
 }
 
-# Hàm tạo AES password file
-create_aes_password() {
-    log_info "Đang tạo AES password file..."
+# Hàm tạo user mtproxy
+create_mtproxy_user() {
+    log_info "Đang tạo user mtproxy..."
     
-    # Tạo file proxy-secret (có thể là file rỗng hoặc chứa password)
-    # Trong script của bạn, file này được dùng với --aes-pwd
-    if [ ! -f "$MT_PROXY_AES_PWD" ]; then
-        # Tạo file password ngẫu nhiên
-        openssl rand -base64 32 > "$MT_PROXY_AES_PWD" 2>/dev/null || \
-        openssl rand -hex 16 > "$MT_PROXY_AES_PWD"
-        log_success "Đã tạo AES password file"
+    if ! id "$MT_PROXY_USER" &>/dev/null; then
+        useradd -m -s /bin/false $MT_PROXY_USER
+        log_success "Đã tạo user $MT_PROXY_USER"
     else
-        log_info "AES password file đã tồn tại"
+        log_info "User $MT_PROXY_USER đã tồn tại"
     fi
+    
+    # Cấp quyền sở hữu thư mục cho user mtproxy
+    chown -R $MT_PROXY_USER:$MT_PROXY_USER $MT_PROXY_DIR
+    log_success "Đã cấp quyền sở hữu cho user $MT_PROXY_USER"
 }
 
 # Hàm chuyển đổi secret từ hex sang base64 (để dùng trong proxy link)
@@ -198,14 +248,26 @@ convert_hex_to_base64() {
     fi
 }
 
-# Hàm lấy IP public
-get_public_ip() {
+# Hàm lấy IP public và private
+get_ips() {
     PUBLIC_IP=$(curl -s ifconfig.me || curl -s ipinfo.io/ip || curl -s icanhazip.com)
     if [ -z "$PUBLIC_IP" ]; then
         log_error "Không thể lấy IP public!"
         exit 1
     fi
+    
+    # Lấy private IP (thử nhiều cách)
+    PRIVATE_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' || \
+                 hostname -I | awk '{print $1}' || \
+                 ip addr show | grep -E 'inet.*eth0|inet.*ens' | awk '{print $2}' | cut -d/ -f1 | head -1)
+    
+    if [ -z "$PRIVATE_IP" ]; then
+        log_warning "Không thể lấy private IP, sẽ sử dụng public IP cho cả hai"
+        PRIVATE_IP="$PUBLIC_IP"
+    fi
+    
     log_info "IP Public: $PUBLIC_IP"
+    log_info "IP Private: $PRIVATE_IP"
 }
 
 # Hàm tạo cấu hình (JSON format như script của bạn)
@@ -259,16 +321,25 @@ create_service() {
         systemctl daemon-reload
     fi
     
-    # Xây dựng command giống hệt script của bạn
-    # Format: mtproto-proxy -H <port> --aes-pwd <password-file> <config-file> -M <workers>
-    EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd proxy-secret proxy-multi.conf"
+    # Lấy IPs cho nat-info
+    get_ips
     
-    # Thêm workers nếu được cấu hình
+    # Lấy secret
+    SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
+    
+    # Xây dựng command theo hướng dẫn chính thức
+    # Format: mtproto-proxy -u <user> -p <stats-port> -H <proxy-port> -S <secret> --aes-pwd <password-file> <config-file> -M <workers> --http-stats --nat-info <private-ip>:<public-ip>
+    EXEC_START="$MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $SECRET_HEX --aes-pwd proxy-secret proxy-multi.conf"
+    
+    # Thêm workers
     if [ ! -z "$WORKERS" ]; then
         EXEC_START="$EXEC_START -M $WORKERS"
     else
         EXEC_START="$EXEC_START -M 1"
     fi
+    
+    # Thêm http-stats và nat-info
+    EXEC_START="$EXEC_START --http-stats --nat-info $PRIVATE_IP:$PUBLIC_IP"
     
     cat > $SERVICE_FILE << EOF
 [Unit]
@@ -279,16 +350,15 @@ After=network.target
 Type=simple
 WorkingDirectory=$MT_PROXY_DIR
 ExecStart=$EXEC_START
-Restart=always
-RestartSec=10
-User=root
+Restart=on-failure
+User=$MT_PROXY_USER
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable mtproxy
+    systemctl enable MTProxy
     log_success "Đã tạo systemd service"
     log_info "Command: $EXEC_START"
 }
@@ -315,43 +385,41 @@ start_service() {
         exit 1
     fi
     
-    # Kiểm tra config JSON có hợp lệ không
-    if ! grep -q "\"secret\"" "$MT_PROXY_CONFIG" || ! grep -q "\"port\"" "$MT_PROXY_CONFIG"; then
-        log_error "Config file thiếu secret hoặc port!"
-        log_info "Nội dung config file:"
-        cat "$MT_PROXY_CONFIG"
+    # Kiểm tra các file cần thiết
+    if [ ! -f "$MT_PROXY_CONFIG" ]; then
+        log_error "File proxy-multi.conf không tồn tại!"
         exit 1
     fi
     
-    # Kiểm tra file proxy-secret có tồn tại không
     if [ ! -f "$MT_PROXY_AES_PWD" ]; then
         log_error "File proxy-secret không tồn tại!"
         exit 1
     fi
     
-    # Hiển thị config file để debug (ẩn secret)
-    log_info "Kiểm tra config file trước khi khởi động:"
-    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
-        log_info "  $line"
-    done
+    if [ ! -f "$MT_PROXY_SECRET_FILE" ]; then
+        log_error "File secret không tồn tại!"
+        exit 1
+    fi
     
-    systemctl restart mtproxy
+    log_info "Tất cả các file cần thiết đã sẵn sàng"
+    
+    systemctl restart MTProxy
     
     # Kiểm tra trạng thái
     sleep 3
-    if systemctl is-active --quiet mtproxy; then
+    if systemctl is-active --quiet MTProxy; then
         log_success "MTProxy đã khởi động thành công"
     else
         log_error "MTProxy khởi động thất bại!"
         echo ""
         log_info "Chi tiết lỗi:"
-        systemctl status mtproxy --no-pager -l
+        systemctl status MTProxy --no-pager -l
         echo ""
         log_info "Logs gần đây:"
-        journalctl -u mtproxy -n 20 --no-pager
+        journalctl -u MTProxy -n 20 --no-pager
         echo ""
-        log_info "Kiểm tra file config:"
-        cat $MT_PROXY_CONFIG
+        log_info "Kiểm tra các file:"
+        ls -la $MT_PROXY_DIR/
         echo ""
         exit 1
     fi
@@ -361,8 +429,8 @@ start_service() {
 export_proxy_info() {
     log_info "Đang tạo thông tin proxy..."
     
-    SECRET_HEX=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
-    get_public_ip
+    SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
+    get_ips
     
     # Chuyển đổi secret từ hex sang base64 để dùng trong proxy link
     SECRET_BASE64=$(convert_hex_to_base64 "$SECRET_HEX")
@@ -560,9 +628,10 @@ main() {
     detect_os
     install_dependencies
     install_mtproxy
+    create_mtproxy_user
+    download_telegram_files
     generate_secret
-    create_aes_password
-    create_config
+    update_proxy_config
     configure_firewall
     create_service
     start_service
