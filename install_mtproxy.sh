@@ -134,10 +134,12 @@ install_mtproxy() {
     
     # Sửa Makefile để thêm -fcommon flag (theo hướng dẫn)
     log_info "Đang sửa Makefile..."
-    if ! grep -q "-fcommon" Makefile; then
-        sed -i 's/COMMON_CFLAGS =/COMMON_CFLAGS = -fcommon/' Makefile
-        sed -i 's/COMMON_LDFLAGS =/COMMON_LDFLAGS = -fcommon/' Makefile
+    if ! grep -q "-fcommon" ./Makefile 2>/dev/null; then
+        sed -i 's/COMMON_CFLAGS =/COMMON_CFLAGS = -fcommon/' ./Makefile
+        sed -i 's/COMMON_LDFLAGS =/COMMON_LDFLAGS = -fcommon/' ./Makefile
         log_success "Đã thêm -fcommon flag vào Makefile"
+    else
+        log_info "Makefile đã có -fcommon flag"
     fi
     
     # Compile
@@ -384,6 +386,12 @@ update_proxy_config() {
     if [ -z "$SECRET_HEX" ]; then
         log_error "Secret không hợp lệ!"
         exit 1
+    fi
+    
+    # Xóa file config cũ nếu có (có thể là file từ Telegram với format khác)
+    if [ -f "$MT_PROXY_CONFIG" ]; then
+        rm -f "$MT_PROXY_CONFIG"
+        log_info "Đã xóa file config cũ"
     fi
     
     # Tạo file config mới với format native mtproto-proxy (không phải JSON)
