@@ -15,12 +15,13 @@ NC='\033[0m' # No Color
 # Biến cấu hình
 MT_PROXY_DIR="/opt/mtproxy"
 MT_PROXY_BIN="$MT_PROXY_DIR/mtproto-proxy"
-MT_PROXY_CONFIG="$MT_PROXY_DIR/config.conf"
+MT_PROXY_CONFIG="$MT_PROXY_DIR/proxy-multi.conf"
 MT_PROXY_SECRET="$MT_PROXY_DIR/secret"
+MT_PROXY_AES_PWD="$MT_PROXY_DIR/proxy-secret"
 SERVICE_FILE="/etc/systemd/system/mtproxy.service"
 PROMO_CHANNEL=""
 PROXY_PORT=443
-WORKERS=""  # Để trống = không giới hạn workers
+WORKERS="1"  # Mặc định 1 worker như script của bạn
 
 # Hàm log
 log_info() {
@@ -141,72 +142,59 @@ install_mtproxy() {
     log_success "Đã compile MTProxy thành công"
 }
 
-# Hàm tạo secret
+# Hàm tạo secret (hex format như script của bạn)
 generate_secret() {
     log_info "Đang tạo secret..."
     
     if [ ! -f "$MT_PROXY_SECRET" ]; then
-        # Tạo secret: MTProxy secret là 16 bytes với byte đầu là 0xdd
-        # Format: 0xdd + 15 bytes random, sau đó encode base64
+        # Tạo secret ở hex format: 16 bytes = 32 hex characters (giống script của bạn)
         if command -v openssl &> /dev/null; then
-            # Tạo 15 bytes random và thêm 0xdd ở đầu
-            printf '\xdd' > $MT_PROXY_SECRET.tmp
-            openssl rand 15 >> $MT_PROXY_SECRET.tmp
-            base64 -w 0 $MT_PROXY_SECRET.tmp > $MT_PROXY_SECRET
-            rm -f $MT_PROXY_SECRET.tmp
-        elif [ -c /dev/urandom ]; then
-            # Sử dụng /dev/urandom
-            printf '\xdd' > $MT_PROXY_SECRET.tmp
-            head -c 15 /dev/urandom >> $MT_PROXY_SECRET.tmp
-            base64 -w 0 $MT_PROXY_SECRET.tmp > $MT_PROXY_SECRET 2>/dev/null || \
-            base64 $MT_PROXY_SECRET.tmp | tr -d '\n' > $MT_PROXY_SECRET
-            rm -f $MT_PROXY_SECRET.tmp
+            SECRET_HEX=$(openssl rand -hex 16)
+            echo "$SECRET_HEX" > $MT_PROXY_SECRET
+            log_success "Đã tạo secret mới (hex format)"
         else
-            # Fallback: sử dụng dd
-            printf '\xdd' > $MT_PROXY_SECRET.tmp
-            dd if=/dev/urandom bs=15 count=1 2>/dev/null >> $MT_PROXY_SECRET.tmp
-            base64 -w 0 $MT_PROXY_SECRET.tmp > $MT_PROXY_SECRET 2>/dev/null || \
-            base64 $MT_PROXY_SECRET.tmp | tr -d '\n' > $MT_PROXY_SECRET
-            rm -f $MT_PROXY_SECRET.tmp
+            log_error "Cần openssl để tạo secret!"
+            exit 1
         fi
-        log_success "Đã tạo secret mới"
     else
         log_info "Sử dụng secret hiện có"
     fi
     
-    SECRET=$(cat $MT_PROXY_SECRET | head -n 1)
-    log_info "Secret: $SECRET"
+    SECRET_HEX=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
+    log_info "Secret (hex): $SECRET_HEX"
 }
 
-# Hàm chuyển đổi secret từ base64 sang hex
-convert_secret_to_hex() {
-    local base64_secret=$1
-    local decoded_bytes
+# Hàm tạo AES password file
+create_aes_password() {
+    log_info "Đang tạo AES password file..."
     
-    # Decode base64
-    decoded_bytes=$(echo -n "$base64_secret" | base64 -d 2>/dev/null)
-    
-    if [ -z "$decoded_bytes" ]; then
-        log_warning "Không thể decode secret sang hex"
-        echo ""
-        return
-    fi
-    
-    # Convert sang hex - thử các phương pháp khác nhau
-    if command -v xxd &> /dev/null; then
-        echo -n "$decoded_bytes" | xxd -p -c 256 | tr -d '\n'
-    elif command -v od &> /dev/null; then
-        echo -n "$decoded_bytes" | od -A n -t x1 | tr -d ' \n'
-    elif command -v hexdump &> /dev/null; then
-        echo -n "$decoded_bytes" | hexdump -ve '1/1 "%.2x"'
+    # Tạo file proxy-secret (có thể là file rỗng hoặc chứa password)
+    # Trong script của bạn, file này được dùng với --aes-pwd
+    if [ ! -f "$MT_PROXY_AES_PWD" ]; then
+        # Tạo file password ngẫu nhiên
+        openssl rand -base64 32 > "$MT_PROXY_AES_PWD" 2>/dev/null || \
+        openssl rand -hex 16 > "$MT_PROXY_AES_PWD"
+        log_success "Đã tạo AES password file"
     else
-        # Fallback: sử dụng printf với từng byte
-        local result=""
-        local len=${#decoded_bytes}
-        for ((i=0; i<len; i++)); do
-            printf -v result "%s%02x" "$result" "'${decoded_bytes:i:1}"
-        done
-        echo -n "$result"
+        log_info "AES password file đã tồn tại"
+    fi
+}
+
+# Hàm chuyển đổi secret từ hex sang base64 (để dùng trong proxy link)
+convert_hex_to_base64() {
+    local hex_secret=$1
+    
+    # Convert hex sang base64
+    if command -v xxd &> /dev/null; then
+        echo -n "$hex_secret" | xxd -r -p | base64 -w 0 2>/dev/null || \
+        echo -n "$hex_secret" | xxd -r -p | base64 | tr -d '\n'
+    elif command -v od &> /dev/null; then
+        # Convert hex string sang bytes rồi base64
+        echo -n "$hex_secret" | sed 's/\(..\)/\\x\1/g' | xargs -0 printf | base64 -w 0 2>/dev/null || \
+        echo -n "$hex_secret" | sed 's/\(..\)/\\x\1/g' | xargs -0 printf | base64 | tr -d '\n'
+    else
+        log_warning "Không thể convert hex sang base64"
+        echo ""
     fi
 }
 
@@ -220,59 +208,40 @@ get_public_ip() {
     log_info "IP Public: $PUBLIC_IP"
 }
 
-# Hàm tạo cấu hình
+# Hàm tạo cấu hình (JSON format như script của bạn)
 create_config() {
     log_info "Đang tạo cấu hình..."
     
-    SECRET=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
+    SECRET_HEX=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
     
     # Kiểm tra secret có hợp lệ không
-    if [ -z "$SECRET" ]; then
+    if [ -z "$SECRET_HEX" ]; then
         log_error "Secret không hợp lệ!"
         exit 1
     fi
     
-    # Xóa config file cũ nếu có (để tránh các dòng log cũ)
+    # Xóa config file cũ nếu có
     if [ -f "$MT_PROXY_CONFIG" ]; then
         rm -f "$MT_PROXY_CONFIG"
     fi
     
-    # Tạo config file - MTProxy yêu cầu format đơn giản, không có comment
-    # Format: secret=... port=... workers=... (nếu có) promo=... (nếu có)
-    # Tạo file tạm trước, sau đó làm sạch và copy sang file chính
-    TEMP_CONFIG=$(mktemp)
+    # Tạo JSON config file (giống script của bạn)
+    cat > "$MT_PROXY_CONFIG" << EOF
+{
+    "tag": "proxy1",
+    "port": $PROXY_PORT,
+    "secret": "$SECRET_HEX"$(if [ ! -z "$PROMO_CHANNEL" ]; then echo ",
+    \"sponsored_channel\": {
+        \"channel_username\": \"$PROMO_CHANNEL\"
+    }"; fi)
+}
+EOF
     
-    echo "secret=$SECRET" > "$TEMP_CONFIG"
-    echo "port=$PROXY_PORT" >> "$TEMP_CONFIG"
-    
-    # Thêm workers nếu được cấu hình
-    if [ ! -z "$WORKERS" ]; then
-        echo "workers=$WORKERS" >> "$TEMP_CONFIG"
-        log_info "Workers được cấu hình: $WORKERS"
-    else
-        log_info "Workers: không giới hạn"
-    fi
-    
-    # Thêm promo channel nếu có
-    if [ ! -z "$PROMO_CHANNEL" ]; then
-        echo "promo=$PROMO_CHANNEL" >> "$TEMP_CONFIG"
-        log_success "Đã thêm Channel Promo: $PROMO_CHANNEL"
-    fi
-    
-    # Làm sạch config file - chỉ giữ các dòng hợp lệ (bắt đầu bằng chữ cái và có dấu =)
-    grep -E '^[a-zA-Z_]+=' "$TEMP_CONFIG" > "$MT_PROXY_CONFIG" 2>/dev/null
-    rm -f "$TEMP_CONFIG"
-    
-    log_success "Đã tạo cấu hình"
-    log_info "Nội dung config:"
-    while IFS= read -r line || [ -n "$line" ]; do
-        # Chỉ hiển thị các dòng hợp lệ (bắt đầu bằng chữ cái và có dấu =)
-        if [[ $line =~ ^secret= ]]; then
-            log_info "  secret=*** (đã ẩn)"
-        elif [[ $line =~ ^[a-zA-Z_]+= ]]; then
-            log_info "  $line"
-        fi
-    done < "$MT_PROXY_CONFIG"
+    log_success "Đã tạo cấu hình JSON"
+    log_info "Nội dung config (đã ẩn secret):"
+    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
+        log_info "  $line"
+    done
 }
 
 # Hàm tạo systemd service
@@ -290,9 +259,16 @@ create_service() {
         systemctl daemon-reload
     fi
     
-    # Xây dựng command - chỉ truyền config file (port và workers đã có trong config)
-    # Format đơn giản: mtproto-proxy <config-file>
-    EXEC_START="$MT_PROXY_BIN $MT_PROXY_CONFIG"
+    # Xây dựng command giống hệt script của bạn
+    # Format: mtproto-proxy -H <port> --aes-pwd <password-file> <config-file> -M <workers>
+    EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd proxy-secret proxy-multi.conf"
+    
+    # Thêm workers nếu được cấu hình
+    if [ ! -z "$WORKERS" ]; then
+        EXEC_START="$EXEC_START -M $WORKERS"
+    else
+        EXEC_START="$EXEC_START -M 1"
+    fi
     
     cat > $SERVICE_FILE << EOF
 [Unit]
@@ -339,44 +315,25 @@ start_service() {
         exit 1
     fi
     
-    # Kiểm tra config có chứa secret và port không
-    if ! grep -q "^secret=" "$MT_PROXY_CONFIG" || ! grep -q "^port=" "$MT_PROXY_CONFIG"; then
+    # Kiểm tra config JSON có hợp lệ không
+    if ! grep -q "\"secret\"" "$MT_PROXY_CONFIG" || ! grep -q "\"port\"" "$MT_PROXY_CONFIG"; then
         log_error "Config file thiếu secret hoặc port!"
         log_info "Nội dung config file:"
         cat "$MT_PROXY_CONFIG"
         exit 1
     fi
     
-    # Luôn làm sạch config file - chỉ giữ các dòng hợp lệ
-    log_info "Đang làm sạch config file..."
-    grep -E '^[a-zA-Z_]+=' "$MT_PROXY_CONFIG" > "$MT_PROXY_CONFIG.tmp" 2>/dev/null
-    if [ -s "$MT_PROXY_CONFIG.tmp" ]; then
-        mv "$MT_PROXY_CONFIG.tmp" "$MT_PROXY_CONFIG"
-        log_success "Đã làm sạch config file"
-    else
-        log_error "Config file không hợp lệ sau khi làm sạch!"
-        rm -f "$MT_PROXY_CONFIG.tmp"
+    # Kiểm tra file proxy-secret có tồn tại không
+    if [ ! -f "$MT_PROXY_AES_PWD" ]; then
+        log_error "File proxy-secret không tồn tại!"
         exit 1
     fi
     
-    # Hiển thị config file để debug (ẩn secret và chỉ hiển thị dòng hợp lệ)
+    # Hiển thị config file để debug (ẩn secret)
     log_info "Kiểm tra config file trước khi khởi động:"
-    while IFS= read -r line || [ -n "$line" ]; do
-        if [[ $line =~ ^secret= ]]; then
-            log_info "  secret=*** (đã ẩn)"
-        elif [[ $line =~ ^[a-zA-Z_]+= ]]; then
-            log_info "  $line"
-        fi
-    done < "$MT_PROXY_CONFIG"
-    
-    # Test chạy MTProxy trực tiếp để xem lỗi
-    log_info "Đang test chạy MTProxy để kiểm tra config..."
-    cd $MT_PROXY_DIR
-    if $MT_PROXY_BIN -H $PROXY_PORT $MT_PROXY_CONFIG 2>&1 | head -10; then
-        log_info "Test chạy thành công"
-    else
-        log_warning "Test chạy có lỗi, nhưng sẽ tiếp tục khởi động service..."
-    fi
+    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
+        log_info "  $line"
+    done
     
     systemctl restart mtproxy
     
@@ -404,14 +361,14 @@ start_service() {
 export_proxy_info() {
     log_info "Đang tạo thông tin proxy..."
     
-    SECRET=$(cat $MT_PROXY_SECRET | head -n 1)
+    SECRET_HEX=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
     get_public_ip
     
-    # Chuyển đổi secret sang hex format để gửi cho bot
-    SECRET_HEX=$(convert_secret_to_hex "$SECRET")
+    # Chuyển đổi secret từ hex sang base64 để dùng trong proxy link
+    SECRET_BASE64=$(convert_hex_to_base64 "$SECRET_HEX")
     
-    # Tạo proxy link
-    PROXY_LINK="tg://proxy?server=$PUBLIC_IP&port=$PROXY_PORT&secret=$SECRET"
+    # Tạo proxy link (sử dụng base64 secret)
+    PROXY_LINK="tg://proxy?server=$PUBLIC_IP&port=$PROXY_PORT&secret=$SECRET_BASE64"
     
     echo ""
     echo "=========================================="
@@ -421,15 +378,22 @@ export_proxy_info() {
     echo "Thông tin Proxy:"
     echo "  IP: $PUBLIC_IP"
     echo "  Port: $PROXY_PORT"
-    echo "  Secret (Base64): $SECRET"
+    echo "  Secret (Hex): $SECRET_HEX"
+    if [ ! -z "$SECRET_BASE64" ]; then
+        echo "  Secret (Base64): $SECRET_BASE64"
+    fi
     echo ""
     echo "Link Proxy (Telegram):"
-    echo "  $PROXY_LINK"
+    if [ ! -z "$SECRET_BASE64" ]; then
+        echo "  $PROXY_LINK"
+    else
+        echo "  tg://proxy?server=$PUBLIC_IP&port=$PROXY_PORT&secret=$SECRET_HEX"
+    fi
     echo ""
     echo "Hoặc sử dụng format này trong Telegram:"
     echo "  Server: $PUBLIC_IP"
     echo "  Port: $PROXY_PORT"
-    echo "  Secret: $SECRET"
+    echo "  Secret: $SECRET_HEX (hex) hoặc $SECRET_BASE64 (base64)"
     echo ""
     
     # Hiển thị hướng dẫn đăng ký với MTProxy Bot nếu có Channel Promo
@@ -469,8 +433,8 @@ MTProxy Information
 ===================
 IP: $PUBLIC_IP
 Port: $PROXY_PORT
-Secret (Base64): $SECRET
 Secret (Hex): $SECRET_HEX
+Secret (Base64): $SECRET_BASE64
 Proxy Link: $PROXY_LINK
 
 Generated at: $(date)
@@ -597,6 +561,7 @@ main() {
     install_dependencies
     install_mtproxy
     generate_secret
+    create_aes_password
     create_config
     configure_firewall
     create_service
