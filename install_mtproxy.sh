@@ -306,6 +306,56 @@ EOF
     done
 }
 
+# Hàm cập nhật proxy-multi.conf với secret và channel promo
+update_proxy_config() {
+    log_info "Đang cập nhật proxy-multi.conf với secret và channel promo..."
+    
+    SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
+    
+    # Kiểm tra secret có hợp lệ không
+    if [ -z "$SECRET_HEX" ]; then
+        log_error "Secret không hợp lệ!"
+        exit 1
+    fi
+    
+    # Kiểm tra file proxy-multi.conf đã được download chưa
+    if [ ! -f "$MT_PROXY_CONFIG" ]; then
+        log_error "File $MT_PROXY_CONFIG không tồn tại! Vui lòng chạy lại download_telegram_files()"
+        exit 1
+    fi
+    
+    # Tạo file config mới với secret và channel promo
+    # Đọc file gốc và cập nhật
+    if [ ! -z "$PROMO_CHANNEL" ]; then
+        # Có channel promo
+        cat > "$MT_PROXY_CONFIG" << EOF
+{
+    "tag": "proxy1",
+    "port": $PROXY_PORT,
+    "secret": "$SECRET_HEX",
+    "sponsored_channel": {
+        "channel_username": "$PROMO_CHANNEL"
+    }
+}
+EOF
+    else
+        # Không có channel promo
+        cat > "$MT_PROXY_CONFIG" << EOF
+{
+    "tag": "proxy1",
+    "port": $PROXY_PORT,
+    "secret": "$SECRET_HEX"
+}
+EOF
+    fi
+    
+    log_success "Đã cập nhật proxy-multi.conf"
+    log_info "Nội dung config (đã ẩn secret):"
+    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
+        log_info "  $line"
+    done
+}
+
 # Hàm tạo systemd service
 create_service() {
     log_info "Đang tạo systemd service..."
