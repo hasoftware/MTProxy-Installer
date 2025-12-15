@@ -5,20 +5,20 @@
 
 Script tự động cài đặt MTProxy cho VPS Linux với các tính năng:
 
-- ✅ Tự động phát hiện hệ điều hành Linux (Ubuntu, Debian, CentOS, RHEL, Fedora)
-- ✅ Tự động cài đặt MTProxy và xuất thông tin proxy
-- ✅ Hỗ trợ cấu hình Channel Promo từ file config
-- ✅ Tự động chuyển đổi secret sang hex format để đăng ký với @MTProxybot
-- ✅ Tự động cấu hình firewall
+- Tự động phát hiện hệ điều hành Linux (Ubuntu, Debian, CentOS, RHEL, Fedora)
+- Tự động cài đặt MTProxy và xuất thông tin proxy
+- Hỗ trợ cấu hình Channel Promo từ file config
+- Tự động chuyển đổi secret sang hex format để đăng ký với @MTProxybot
+- Tự động cấu hình firewall
 
-## 📋 Yêu cầu
+## Yêu cầu
 
 - Hệ điều hành: Linux (Ubuntu, Debian, CentOS, RHEL, Fedora)
 - Quyền: Root hoặc sudo
 - Kết nối Internet
 - Git (để clone repository)
 
-## 🚀 Cài đặt nhanh
+## Cài đặt nhanh
 
 ### Bước 1: Clone repository
 
@@ -62,15 +62,15 @@ sudo ./install_mtproxy.sh
 
 Sau khi cài đặt thành công, script sẽ tự động hiển thị:
 
-- ✅ IP Public
-- ✅ Port
-- ✅ Secret (Base64) - để sử dụng trong proxy link
-- ✅ Secret (Hex) - để đăng ký với @MTProxybot
-- ✅ Link proxy để sử dụng trong Telegram
+- IP Public
+- Port
+- Secret (Base64) - để sử dụng trong proxy link
+- Secret (Hex) - để đăng ký với @MTProxybot
+- Link proxy để sử dụng trong Telegram
 
 Thông tin cũng được lưu trong file: `/opt/mtproxy/proxy_info.txt`
 
-## 📱 Đăng ký Channel Promo với @MTProxybot
+## Đăng ký Channel Promo với @MTProxybot
 
 Nếu bạn đã cấu hình `PROMO_CHANNEL` trong script, sau khi cài đặt thành công, làm theo các bước sau:
 
@@ -80,9 +80,9 @@ Nếu bạn đã cấu hình `PROMO_CHANNEL` trong script, sau khi cài đặt t
 4. Khi bot hỏi: **"Now please specify its secret in hex format"**, gửi secret ở định dạng hex (script đã tự động hiển thị sau khi cài đặt)
 5. Bot sẽ hỏi channel để quảng cáo, gửi: `@your_channel`
 
-> 💡 **Lưu ý**: Secret ở định dạng hex được hiển thị tự động sau khi cài đặt và cũng được lưu trong file `/opt/mtproxy/proxy_info.txt`
+**Lưu ý**: Secret ở định dạng hex được hiển thị tự động sau khi cài đặt và cũng được lưu trong file `/opt/mtproxy/proxy_info.txt`
 
-## 🔧 Quản lý Service
+## Quản lý Service
 
 ```bash
 # Kiểm tra trạng thái
@@ -98,7 +98,7 @@ sudo systemctl stop mtproxy
 sudo journalctl -u mtproxy -f
 ```
 
-## 📝 Cập nhật Channel Promo sau khi cài đặt
+## Cập nhật Channel Promo sau khi cài đặt
 
 Sử dụng script `update_promo.sh`:
 
@@ -119,7 +119,7 @@ sudo ./update_promo.sh
 sudo ./update_promo.sh ""
 ```
 
-## 📂 Cấu trúc File
+## Cấu trúc File
 
 ```
 MTProxy-Installer/
@@ -136,7 +136,7 @@ Sau khi cài đặt:
 └── proxy_info.txt       # Thông tin proxy đã tạo
 ```
 
-## 🗑️ Gỡ cài đặt
+## Gỡ cài đặt
 
 ```bash
 # Dừng và xóa service
@@ -149,7 +149,7 @@ sudo systemctl daemon-reload
 sudo rm -rf /opt/mtproxy
 ```
 
-## ⚠️ Lưu ý
+## Lưu ý
 
 - Port mặc định là **443** (HTTPS), đảm bảo port này chưa được sử dụng
 - Script sẽ tự động tạo secret mới nếu chưa có
@@ -157,7 +157,7 @@ sudo rm -rf /opt/mtproxy
 - Script tự động cấu hình firewall (UFW, firewalld, hoặc iptables)
 - Đảm bảo firewall cho phép kết nối đến port đã cấu hình
 
-## 🐛 Xử lý lỗi
+## Xử lý lỗi
 
 Nếu gặp vấn đề, kiểm tra logs:
 
@@ -172,7 +172,7 @@ sudo journalctl -u mtproxy -f
 sudo systemctl status mtproxy
 ```
 
-## 📚 Hướng dẫn chi tiết
+## Hướng dẫn chi tiết
 
 ### Cấu hình Channel Promo trước khi cài đặt
 
@@ -191,11 +191,13 @@ sudo systemctl status mtproxy
 Sau khi cài đặt thành công, bạn có thể sử dụng proxy theo các cách sau:
 
 **Cách 1: Sử dụng link tự động**
+
 - Copy link `tg://proxy?server=...` từ output của script
 - Mở Telegram và paste link vào chat bất kỳ
 - Nhấn vào link để kết nối
 
 **Cách 2: Cấu hình thủ công**
+
 - Vào Settings → Data and Storage → Connection Type → Use Proxy
 - Chọn "Add Proxy" → "MTProto Proxy"
 - Nhập thông tin:
@@ -203,7 +205,7 @@ Sau khi cài đặt thành công, bạn có thể sử dụng proxy theo các c�
   - Port: 443 (hoặc port bạn đã cấu hình)
   - Secret: Secret ở định dạng Base64
 
-## 🤝 Đóng góp
+## Đóng góp
 
 Mọi đóng góp đều được chào đón! Vui lòng:
 
@@ -213,20 +215,20 @@ Mọi đóng góp đều được chào đón! Vui lòng:
 4. Push lên branch (`git push origin feature/AmazingFeature`)
 5. Mở Pull Request
 
-## 📄 License
+## License
 
 Dự án này được phân phối dưới giấy phép MIT. Xem file `LICENSE` để biết thêm chi tiết.
 
-## 🔗 Liên kết
+## Liên kết
 
 - Repository: [https://github.com/hasoftware/MTProxy-Installer](https://github.com/hasoftware/MTProxy-Installer)
 - MTProxy Official: [https://github.com/TelegramMessenger/MTProxy](https://github.com/TelegramMessenger/MTProxy)
 - MTProxy Bot: [@MTProxybot](https://t.me/MTProxybot)
 
-## ⭐ Star
+## Star
 
-Nếu dự án này hữu ích với bạn, hãy cho một ⭐ trên GitHub!
+Nếu dự án này hữu ích với bạn, hãy cho một star trên GitHub!
 
 ---
 
-**Made with ❤️ by hasoftware**
+**Made with by hasoftware**
