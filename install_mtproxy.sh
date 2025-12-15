@@ -24,6 +24,7 @@ PROMO_CHANNEL=""
 PROXY_PORT=8443  # Port mặc định theo hướng dẫn
 STATS_PORT=8888  # Port cho HTTP stats
 WORKERS="1"
+PROXY_TAG=""  # Proxy tag từ @MTProxybot (16-byte hex, ví dụ: 5e0798c3ee684cdaa06f53225436269f)
 
 # Hàm log
 log_info() {
@@ -374,13 +375,18 @@ create_service() {
     SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     
     # Xây dựng command theo script của bạn (TelegramMessenger/MTProxy với JSON config)
-    # Format: mtproto-proxy -H <proxy-port> --aes-pwd <password-file> <config-file> -M <workers>
-    # Note: Secret được đặt trong JSON config, không dùng -S flag
+    # Format: mtproto-proxy -H <proxy-port> --aes-pwd <password-file> <config-file> -M <workers> [-P <proxy-tag>]
+    # Note: Secret được đặt trong config file, không dùng -S flag
     # TelegramMessenger/MTProxy đơn giản hơn, không cần -u, -p, --http-stats, --nat-info
     if [ ! -z "$WORKERS" ]; then
         EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M $WORKERS"
     else
         EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M 1"
+    fi
+    
+    # Thêm proxy tag nếu có (từ @MTProxybot)
+    if [ ! -z "$PROXY_TAG" ]; then
+        EXEC_START="$EXEC_START -P $PROXY_TAG"
     fi
     
     cat > $SERVICE_FILE << EOF
@@ -511,6 +517,9 @@ export_proxy_info() {
     echo "  Secret (Hex): $SECRET_HEX"
     if [ ! -z "$SECRET_BASE64" ]; then
         echo "  Secret (Base64): $SECRET_BASE64"
+    fi
+    if [ ! -z "$PROXY_TAG" ]; then
+        echo "  Proxy Tag: $PROXY_TAG"
     fi
     echo ""
     echo "Link Proxy (Telegram):"
@@ -660,6 +669,9 @@ load_config() {
         else
             log_info "Workers: không giới hạn (mặc định)"
         fi
+        if [ ! -z "$PROXY_TAG" ]; then
+            log_success "Đã tải Proxy Tag: $PROXY_TAG"
+        fi
     else
         log_info "Sử dụng cấu hình mặc định"
     fi
@@ -728,4 +740,10 @@ PROXY_PORT=8443
 # Để trống = không giới hạn workers (khuyến nghị)
 # Hoặc đặt số cụ thể, ví dụ: WORKERS=4
 WORKERS=""
+
+# Proxy Tag từ @MTProxybot (tùy chọn)
+# Sau khi đăng ký proxy trên @MTProxybot, bot sẽ cung cấp proxy tag
+# Ví dụ: PROXY_TAG="5e0798c3ee684cdaa06f53225436269f"
+# Để trống nếu chưa đăng ký hoặc không cần proxy tag
+PROXY_TAG=""
 
