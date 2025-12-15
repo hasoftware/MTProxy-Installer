@@ -224,35 +224,44 @@ get_public_ip() {
 create_config() {
     log_info "Đang tạo cấu hình..."
     
-    SECRET=$(cat $MT_PROXY_SECRET | head -n 1)
+    SECRET=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
     
-    # Tạo config file
-    cat > $MT_PROXY_CONFIG << EOF
-# MTProxy Configuration
-# Port: $PROXY_PORT
-EOF
-
-    # Thêm workers nếu được cấu hình (nếu để trống = không giới hạn)
-    if [ ! -z "$WORKERS" ]; then
-        echo "workers=$WORKERS" >> $MT_PROXY_CONFIG
-        log_info "Workers được cấu hình: $WORKERS"
-    else
-        log_info "Workers: không giới hạn"
+    # Kiểm tra secret có hợp lệ không
+    if [ -z "$SECRET" ]; then
+        log_error "Secret không hợp lệ!"
+        exit 1
     fi
     
-    # Thêm secret và port
-    cat >> $MT_PROXY_CONFIG << EOF
-secret=$SECRET
-port=$PROXY_PORT
-EOF
-
-    # Thêm promo channel nếu có
-    if [ ! -z "$PROMO_CHANNEL" ]; then
-        echo "promo=$PROMO_CHANNEL" >> $MT_PROXY_CONFIG
-        log_success "Đã thêm Channel Promo: $PROMO_CHANNEL"
-    fi
+    # Tạo config file - MTProxy yêu cầu format đơn giản, không có comment
+    # Format: secret=... port=... workers=... (nếu có) promo=... (nếu có)
+    {
+        echo "secret=$SECRET"
+        echo "port=$PROXY_PORT"
+        
+        # Thêm workers nếu được cấu hình
+        if [ ! -z "$WORKERS" ]; then
+            echo "workers=$WORKERS"
+            log_info "Workers được cấu hình: $WORKERS"
+        else
+            log_info "Workers: không giới hạn"
+        fi
+        
+        # Thêm promo channel nếu có
+        if [ ! -z "$PROMO_CHANNEL" ]; then
+            echo "promo=$PROMO_CHANNEL"
+            log_success "Đã thêm Channel Promo: $PROMO_CHANNEL"
+        fi
+    } > $MT_PROXY_CONFIG
     
     log_success "Đã tạo cấu hình"
+    log_info "Nội dung config:"
+    cat $MT_PROXY_CONFIG | while read line; do
+        if [[ $line =~ secret= ]]; then
+            log_info "  secret=*** (đã ẩn)"
+        else
+            log_info "  $line"
+        fi
+    done
 }
 
 # Hàm tạo systemd service
@@ -285,15 +294,43 @@ EOF
 start_service() {
     log_info "Đang khởi động MTProxy service..."
     
+    # Kiểm tra config file trước khi khởi động
+    if [ ! -f "$MT_PROXY_CONFIG" ]; then
+        log_error "File config không tồn tại: $MT_PROXY_CONFIG"
+        exit 1
+    fi
+    
+    # Kiểm tra binary có tồn tại không
+    if [ ! -f "$MT_PROXY_BIN" ]; then
+        log_error "Binary không tồn tại: $MT_PROXY_BIN"
+        exit 1
+    fi
+    
+    # Test chạy binary với config để xem lỗi
+    log_info "Đang kiểm tra cấu hình..."
+    if ! $MT_PROXY_BIN -c $MT_PROXY_CONFIG --test 2>&1 | head -5; then
+        # Nếu --test không hỗ trợ, thử chạy trực tiếp và capture lỗi
+        log_warning "Không thể test config, đang thử khởi động service..."
+    fi
+    
     systemctl restart mtproxy
     
     # Kiểm tra trạng thái
-    sleep 2
+    sleep 3
     if systemctl is-active --quiet mtproxy; then
         log_success "MTProxy đã khởi động thành công"
     else
         log_error "MTProxy khởi động thất bại!"
-        systemctl status mtproxy
+        echo ""
+        log_info "Chi tiết lỗi:"
+        systemctl status mtproxy --no-pager -l
+        echo ""
+        log_info "Logs gần đây:"
+        journalctl -u mtproxy -n 20 --no-pager
+        echo ""
+        log_info "Kiểm tra file config:"
+        cat $MT_PROXY_CONFIG
+        echo ""
         exit 1
     fi
 }
