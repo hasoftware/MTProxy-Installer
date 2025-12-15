@@ -234,14 +234,15 @@ create_config() {
     
     # Tạo config file - MTProxy yêu cầu format đơn giản, không có comment
     # Format: secret=... port=... workers=... (nếu có) promo=... (nếu có)
-    # Sử dụng exec để đảm bảo không có output nào khác được ghi vào file
-    exec 3>$MT_PROXY_CONFIG
-    echo "secret=$SECRET" >&3
-    echo "port=$PROXY_PORT" >&3
+    # Tạo file tạm trước, sau đó làm sạch và copy sang file chính
+    TEMP_CONFIG=$(mktemp)
+    
+    echo "secret=$SECRET" > "$TEMP_CONFIG"
+    echo "port=$PROXY_PORT" >> "$TEMP_CONFIG"
     
     # Thêm workers nếu được cấu hình
     if [ ! -z "$WORKERS" ]; then
-        echo "workers=$WORKERS" >&3
+        echo "workers=$WORKERS" >> "$TEMP_CONFIG"
         log_info "Workers được cấu hình: $WORKERS"
     else
         log_info "Workers: không giới hạn"
@@ -249,15 +250,13 @@ create_config() {
     
     # Thêm promo channel nếu có
     if [ ! -z "$PROMO_CHANNEL" ]; then
-        echo "promo=$PROMO_CHANNEL" >&3
+        echo "promo=$PROMO_CHANNEL" >> "$TEMP_CONFIG"
         log_success "Đã thêm Channel Promo: $PROMO_CHANNEL"
     fi
     
-    exec 3>&-
-    
-    # Làm sạch config file - chỉ giữ các dòng hợp lệ
-    grep -E '^[a-zA-Z_]+=' "$MT_PROXY_CONFIG" > "$MT_PROXY_CONFIG.tmp" 2>/dev/null
-    mv "$MT_PROXY_CONFIG.tmp" "$MT_PROXY_CONFIG"
+    # Làm sạch config file - chỉ giữ các dòng hợp lệ (bắt đầu bằng chữ cái và có dấu =)
+    grep -E '^[a-zA-Z_]+=' "$TEMP_CONFIG" > "$MT_PROXY_CONFIG" 2>/dev/null
+    rm -f "$TEMP_CONFIG"
     
     log_success "Đã tạo cấu hình"
     log_info "Nội dung config:"
