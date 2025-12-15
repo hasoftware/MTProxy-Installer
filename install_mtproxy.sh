@@ -331,13 +331,16 @@ start_service() {
         exit 1
     fi
     
-    # Kiểm tra config file không có dòng trống hoặc comment không hợp lệ
-    if grep -q "^\[" "$MT_PROXY_CONFIG" || grep -q "^#" "$MT_PROXY_CONFIG"; then
-        log_warning "Config file có thể chứa comment hoặc format không hợp lệ"
-        log_info "Đang làm sạch config file..."
-        # Chỉ giữ lại các dòng bắt đầu bằng chữ cái và có dấu =
-        grep -E '^[a-zA-Z_]+=' "$MT_PROXY_CONFIG" > "$MT_PROXY_CONFIG.tmp"
+    # Luôn làm sạch config file - chỉ giữ các dòng hợp lệ
+    log_info "Đang làm sạch config file..."
+    grep -E '^[a-zA-Z_]+=' "$MT_PROXY_CONFIG" > "$MT_PROXY_CONFIG.tmp" 2>/dev/null
+    if [ -s "$MT_PROXY_CONFIG.tmp" ]; then
         mv "$MT_PROXY_CONFIG.tmp" "$MT_PROXY_CONFIG"
+        log_success "Đã làm sạch config file"
+    else
+        log_error "Config file không hợp lệ sau khi làm sạch!"
+        rm -f "$MT_PROXY_CONFIG.tmp"
+        exit 1
     fi
     
     # Hiển thị config file để debug (ẩn secret và chỉ hiển thị dòng hợp lệ)
