@@ -397,6 +397,7 @@ update_proxy_config() {
     # Tạo file config mới với format JSON (TelegramMessenger/MTProxy hỗ trợ JSON)
     # Format: { "tag": "proxy1", "port": <PORT>, "secret": "<SECRET_HEX>" }
     # Note: Channel promo được quản lý qua Telegram bot (@MTProxybot) thông qua proxy tag, không cần set trong config file
+    # Tạo file với quyền root trước, sau đó chuyển ownership
     cat > "$MT_PROXY_CONFIG" << EOF
 {
     "tag": "proxy1",
@@ -407,11 +408,21 @@ EOF
     
     # Đảm bảo quyền sở hữu và permissions đúng
     chown $MT_PROXY_USER:$MT_PROXY_USER "$MT_PROXY_CONFIG"
-    chmod 600 "$MT_PROXY_CONFIG"
+    chmod 644 "$MT_PROXY_CONFIG"
+    
+    # Kiểm tra file có được tạo đúng không
+    if [ ! -s "$MT_PROXY_CONFIG" ]; then
+        log_error "Config file không được tạo hoặc rỗng!"
+        exit 1
+    fi
+    
+    # Hiển thị nội dung file để debug (ẩn secret)
+    log_info "Đã tạo config file, kiểm tra nội dung:"
+    cat "$MT_PROXY_CONFIG" | sed "s/\"secret\": \"[^\"]*\"/\"secret\": \"***\"/" | head -5
     
     log_success "Đã cập nhật proxy-multi.conf"
     log_info "Nội dung config (đã ẩn secret):"
-    sed 's/secret = "hex:[^"]*"/secret = "hex:***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
+    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
         log_info "  $line"
     done
     
