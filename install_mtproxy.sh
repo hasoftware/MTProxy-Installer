@@ -287,7 +287,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$MT_PROXY_DIR
-ExecStart=$MT_PROXY_BIN -c $MT_PROXY_CONFIG
+ExecStart=$MT_PROXY_BIN $MT_PROXY_CONFIG
 Restart=always
 RestartSec=10
 User=root
