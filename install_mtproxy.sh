@@ -118,10 +118,10 @@ install_mtproxy() {
     mkdir -p $WORK_DIR
     cd $WORK_DIR
     
-    # Clone repository từ fork community (theo hướng dẫn)
+    # Clone repository từ TelegramMessenger (hỗ trợ JSON config)
     if [ ! -d "MTProxy" ]; then
-        log_info "Đang clone MTProxy repository (community fork)..."
-        git clone https://github.com/GetPageSpeed/MTProxy.git
+        log_info "Đang clone MTProxy repository từ TelegramMessenger..."
+        git clone https://github.com/TelegramMessenger/MTProxy.git
     else
         log_info "Repository đã tồn tại, đang cập nhật..."
         cd MTProxy
@@ -377,19 +377,15 @@ create_service() {
     # Lấy secret
     SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     
-    # Xây dựng command theo hướng dẫn chính thức
-    # Format: mtproto-proxy -u <user> -p <stats-port> -H <proxy-port> -S <secret> --aes-pwd <password-file> <config-file> -M <workers> --http-stats --nat-info <private-ip>:<public-ip>
-    EXEC_START="$MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $SECRET_HEX --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG"
-    
-    # Thêm workers
+    # Xây dựng command theo script của bạn (TelegramMessenger/MTProxy với JSON config)
+    # Format: mtproto-proxy -H <proxy-port> --aes-pwd <password-file> <config-file> -M <workers>
+    # Note: Secret được đặt trong JSON config, không dùng -S flag
+    # TelegramMessenger/MTProxy đơn giản hơn, không cần -u, -p, --http-stats, --nat-info
     if [ ! -z "$WORKERS" ]; then
-        EXEC_START="$EXEC_START -M $WORKERS"
+        EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M $WORKERS"
     else
-        EXEC_START="$EXEC_START -M 1"
+        EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M 1"
     fi
-    
-    # Thêm http-stats và nat-info
-    EXEC_START="$EXEC_START --http-stats --nat-info $PRIVATE_IP:$PUBLIC_IP"
     
     cat > $SERVICE_FILE << EOF
 [Unit]
@@ -400,8 +396,8 @@ After=network.target
 Type=simple
 WorkingDirectory=$MT_PROXY_DIR
 ExecStart=$EXEC_START
-Restart=on-failure
-User=$MT_PROXY_USER
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
