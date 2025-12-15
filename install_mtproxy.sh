@@ -146,15 +146,28 @@ generate_secret() {
     log_info "Đang tạo secret..."
     
     if [ ! -f "$MT_PROXY_SECRET" ]; then
-        # Tạo secret: 16 bytes random được encode sang base64
-        # MTProxy secret phải là 16 bytes được encode base64
+        # Tạo secret: MTProxy secret là 16 bytes với byte đầu là 0xdd
+        # Format: 0xdd + 15 bytes random, sau đó encode base64
         if command -v openssl &> /dev/null; then
-            openssl rand -base64 16 | tr -d '\n' > $MT_PROXY_SECRET
-        elif command -v head &> /dev/null && [ -c /dev/urandom ]; then
-            head -c 16 /dev/urandom | base64 | tr -d '\n' > $MT_PROXY_SECRET
+            # Tạo 15 bytes random và thêm 0xdd ở đầu
+            printf '\xdd' > $MT_PROXY_SECRET.tmp
+            openssl rand 15 >> $MT_PROXY_SECRET.tmp
+            base64 -w 0 $MT_PROXY_SECRET.tmp > $MT_PROXY_SECRET
+            rm -f $MT_PROXY_SECRET.tmp
+        elif [ -c /dev/urandom ]; then
+            # Sử dụng /dev/urandom
+            printf '\xdd' > $MT_PROXY_SECRET.tmp
+            head -c 15 /dev/urandom >> $MT_PROXY_SECRET.tmp
+            base64 -w 0 $MT_PROXY_SECRET.tmp > $MT_PROXY_SECRET 2>/dev/null || \
+            base64 $MT_PROXY_SECRET.tmp | tr -d '\n' > $MT_PROXY_SECRET
+            rm -f $MT_PROXY_SECRET.tmp
         else
-            # Fallback: sử dụng /dev/urandom trực tiếp
-            dd if=/dev/urandom bs=16 count=1 2>/dev/null | base64 | tr -d '\n' > $MT_PROXY_SECRET
+            # Fallback: sử dụng dd
+            printf '\xdd' > $MT_PROXY_SECRET.tmp
+            dd if=/dev/urandom bs=15 count=1 2>/dev/null >> $MT_PROXY_SECRET.tmp
+            base64 -w 0 $MT_PROXY_SECRET.tmp > $MT_PROXY_SECRET 2>/dev/null || \
+            base64 $MT_PROXY_SECRET.tmp | tr -d '\n' > $MT_PROXY_SECRET
+            rm -f $MT_PROXY_SECRET.tmp
         fi
         log_success "Đã tạo secret mới"
     else
