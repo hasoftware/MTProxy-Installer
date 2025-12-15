@@ -342,42 +342,6 @@ get_ips() {
     log_info "IP Private: $PRIVATE_IP"
 }
 
-# Hàm tạo cấu hình (JSON format như script của bạn)
-create_config() {
-    log_info "Đang tạo cấu hình..."
-    
-    SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
-    
-    # Kiểm tra secret có hợp lệ không
-    if [ -z "$SECRET_HEX" ]; then
-        log_error "Secret không hợp lệ!"
-        exit 1
-    fi
-    
-    # Xóa config file cũ nếu có
-    if [ -f "$MT_PROXY_CONFIG" ]; then
-        rm -f "$MT_PROXY_CONFIG"
-    fi
-    
-    # Tạo JSON config file (giống script của bạn)
-    cat > "$MT_PROXY_CONFIG" << EOF
-{
-    "tag": "proxy1",
-    "port": $PROXY_PORT,
-    "secret": "$SECRET_HEX"$(if [ ! -z "$PROMO_CHANNEL" ]; then echo ",
-    \"sponsored_channel\": {
-        \"channel_username\": \"$PROMO_CHANNEL\"
-    }"; fi)
-}
-EOF
-    
-    log_success "Đã tạo cấu hình JSON"
-    log_info "Nội dung config (đã ẩn secret):"
-    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
-        log_info "  $line"
-    done
-}
-
 # Create systemd service
 create_service() {
     log_info "Đang tạo systemd service..."

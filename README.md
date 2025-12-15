@@ -127,6 +127,7 @@ MTProxy-Installer/
 ```
 
 After installation:
+
 ```
 /opt/MTProxy/
 ├── mtproto-proxy         # Binary executable
@@ -149,6 +150,7 @@ sudo ./uninstall.sh
 ```
 
 The script will:
+
 - Stop and remove MTProxy service
 - Remove installation directory `/opt/MTProxy`
 - Remove logs
@@ -207,6 +209,7 @@ sudo ss -tulnp | grep 8443
 ### Common Issues
 
 **Port already in use:**
+
 ```bash
 # Find process using the port
 sudo lsof -i :8443
@@ -217,6 +220,7 @@ sudo netstat -tulnp | grep 8443
 ```
 
 **Service fails to start:**
+
 - Check logs: `sudo journalctl -u MTProxy -n 50`
 - Verify config file exists: `ls -la /opt/MTProxy/proxy-multi.conf`
 - Verify secret file exists: `ls -la /opt/MTProxy/secret`

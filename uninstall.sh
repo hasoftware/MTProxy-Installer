@@ -1,22 +1,23 @@
 #!/bin/bash
 
 # MTProxy Uninstaller Script
-# Xóa hoàn toàn MTProxy và tất cả các file liên quan
+# Completely remove MTProxy and all related files
 
 set -e
 
-# Màu sắc cho output
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Biến cấu hình
-MT_PROXY_DIR="/opt/mtproxy"
-SERVICE_FILE="/etc/systemd/system/mtproxy.service"
+# Configuration variables
+MT_PROXY_DIR="/opt/MTProxy"
+SERVICE_FILE="/etc/systemd/system/MTProxy.service"
+MT_PROXY_USER="mtproxy"
 
-# Hàm log
+# Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -33,135 +34,179 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Hàm xác nhận
+# Confirmation function
 confirm_uninstall() {
     echo ""
-    log_warning "Bạn có chắc chắn muốn xóa hoàn toàn MTProxy?"
-    log_warning "Tất cả dữ liệu và cấu hình sẽ bị mất!"
+    log_warning "Are you sure you want to completely remove MTProxy?"
+    log_warning "All data and configuration will be lost!"
     echo ""
-    read -p "Nhập 'yes' để tiếp tục: " confirm
+    read -p "Type 'yes' to continue: " confirm
     
-    # Loại bỏ khoảng trắng đầu cuối và chuyển sang lowercase
     confirm=$(echo "$confirm" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
     
-    # Kiểm tra với nhiều cách viết
     case "$confirm" in
         yes|y|YES|Y)
-            log_info "Đã xác nhận, bắt đầu gỡ cài đặt..."
+            log_info "Confirmed, starting uninstallation..."
             ;;
         *)
-            log_info "Đã hủy gỡ cài đặt."
+            log_info "Uninstallation cancelled."
             exit 0
             ;;
     esac
 }
 
-# Hàm dừng và xóa service
+# Stop and remove service
 remove_service() {
-    log_info "Đang dừng và xóa MTProxy service..."
+    log_info "Stopping and removing MTProxy service..."
     
-    if systemctl is-active --quiet mtproxy 2>/dev/null; then
+    if systemctl is-active --quiet MTProxy 2>/dev/null; then
+        systemctl stop MTProxy
+        log_success "Stopped MTProxy service"
+    elif systemctl is-active --quiet mtproxy 2>/dev/null; then
         systemctl stop mtproxy
-        log_success "Đã dừng MTProxy service"
+        log_success "Stopped mtproxy service (legacy)"
     else
-        log_info "MTProxy service không chạy"
+        log_info "MTProxy service is not running"
     fi
     
-    if systemctl is-enabled --quiet mtproxy 2>/dev/null; then
+    if systemctl is-enabled --quiet MTProxy 2>/dev/null; then
+        systemctl disable MTProxy
+        log_success "Disabled MTProxy service"
+    elif systemctl is-enabled --quiet mtproxy 2>/dev/null; then
         systemctl disable mtproxy
-        log_success "Đã vô hiệu hóa MTProxy service"
+        log_success "Disabled mtproxy service (legacy)"
     fi
     
     if [ -f "$SERVICE_FILE" ]; then
         rm -f "$SERVICE_FILE"
-        log_success "Đã xóa service file: $SERVICE_FILE"
-    else
-        log_info "Service file không tồn tại"
+        log_success "Removed service file: $SERVICE_FILE"
+    fi
+    
+    if [ -f "/etc/systemd/system/mtproxy.service" ]; then
+        rm -f "/etc/systemd/system/mtproxy.service"
+        log_success "Removed legacy service file"
     fi
     
     systemctl daemon-reload
-    log_success "Đã reload systemd"
+    log_success "Reloaded systemd"
 }
 
-# Hàm xóa thư mục cài đặt
+# Remove installation directory
 remove_installation_directory() {
-    log_info "Đang xóa thư mục cài đặt..."
+    log_info "Removing installation directory..."
     
     if [ -d "$MT_PROXY_DIR" ]; then
         rm -rf "$MT_PROXY_DIR"
-        log_success "Đã xóa thư mục: $MT_PROXY_DIR"
+        log_success "Removed directory: $MT_PROXY_DIR"
     else
-        log_info "Thư mục cài đặt không tồn tại"
+        log_info "Installation directory does not exist"
+    fi
+    
+    if [ -d "/opt/mtproxy" ]; then
+        rm -rf "/opt/mtproxy"
+        log_success "Removed legacy directory: /opt/mtproxy"
     fi
 }
 
-# Hàm xóa các file log
-remove_logs() {
-    log_info "Đang xóa logs..."
+# Remove mtproxy user
+remove_user() {
+    log_info "Removing mtproxy user..."
     
-    # Xóa journal logs
+    if id "$MT_PROXY_USER" &>/dev/null; then
+        userdel -r "$MT_PROXY_USER" 2>/dev/null || userdel "$MT_PROXY_USER" 2>/dev/null || true
+        log_success "Removed user: $MT_PROXY_USER"
+    else
+        log_info "User $MT_PROXY_USER does not exist"
+    fi
+}
+
+# Remove log files
+remove_logs() {
+    log_info "Removing logs..."
+    
+    if journalctl -u MTProxy --no-pager > /dev/null 2>&1; then
+        journalctl --vacuum-time=1s --unit=MTProxy > /dev/null 2>&1 || true
+        log_success "Removed journal logs"
+    fi
+    
     if journalctl -u mtproxy --no-pager > /dev/null 2>&1; then
         journalctl --vacuum-time=1s --unit=mtproxy > /dev/null 2>&1 || true
-        log_success "Đã xóa journal logs"
+        log_success "Removed legacy journal logs"
     fi
 }
 
-# Hàm xóa firewall rules (tùy chọn)
+# Remove firewall rules (optional)
 remove_firewall_rules() {
-    log_info "Đang kiểm tra firewall rules..."
+    log_info "Checking firewall rules..."
     
-    # Kiểm tra UFW
-    if command -v ufw &> /dev/null; then
-        if ufw status | grep -q "443/tcp"; then
-            log_warning "Phát hiện firewall rule cho port 443"
-            log_info "Bạn có muốn xóa firewall rule cho port 443? (y/n)"
-            read -p "Lựa chọn: " remove_fw
-            if [ "$remove_fw" = "y" ] || [ "$remove_fw" = "Y" ]; then
-                ufw delete allow 443/tcp 2>/dev/null || true
-                log_success "Đã xóa firewall rule cho port 443"
+    local ports="8443 8888 443"
+    
+    for port in $ports; do
+        if command -v ufw &> /dev/null; then
+            if ufw status | grep -q "${port}/tcp"; then
+                log_warning "Found firewall rule for port ${port}"
+                log_info "Do you want to remove firewall rule for port ${port}? (y/n)"
+                read -p "Choice: " remove_fw
+                if [ "$remove_fw" = "y" ] || [ "$remove_fw" = "Y" ]; then
+                    ufw delete allow ${port}/tcp 2>/dev/null || true
+                    log_success "Removed firewall rule for port ${port}"
+                fi
             fi
         fi
-    fi
-    
-    # Kiểm tra firewalld
-    if command -v firewall-cmd &> /dev/null; then
-        if firewall-cmd --list-ports 2>/dev/null | grep -q "443/tcp"; then
-            log_warning "Phát hiện firewall rule cho port 443 trong firewalld"
-            log_info "Bạn có muốn xóa firewall rule cho port 443? (y/n)"
-            read -p "Lựa chọn: " remove_fw
-            if [ "$remove_fw" = "y" ] || [ "$remove_fw" = "Y" ]; then
-                firewall-cmd --permanent --remove-port=443/tcp 2>/dev/null || true
-                firewall-cmd --reload 2>/dev/null || true
-                log_success "Đã xóa firewall rule cho port 443"
+        
+        if command -v firewall-cmd &> /dev/null; then
+            if firewall-cmd --list-ports 2>/dev/null | grep -q "${port}/tcp"; then
+                log_warning "Found firewall rule for port ${port} in firewalld"
+                log_info "Do you want to remove firewall rule for port ${port}? (y/n)"
+                read -p "Choice: " remove_fw
+                if [ "$remove_fw" = "y" ] || [ "$remove_fw" = "Y" ]; then
+                    firewall-cmd --permanent --remove-port=${port}/tcp 2>/dev/null || true
+                    firewall-cmd --reload 2>/dev/null || true
+                    log_success "Removed firewall rule for port ${port}"
+                fi
             fi
         fi
-    fi
+    done
 }
 
-# Hàm kiểm tra và xóa các file còn sót lại
+# Check and remove remaining files
 check_remaining_files() {
-    log_info "Đang kiểm tra các file còn sót lại..."
+    log_info "Checking for remaining files..."
     
     local found=0
     
-    # Kiểm tra các vị trí có thể có file
+    if [ -d "/opt/MTProxy" ]; then
+        log_warning "Still found directory /opt/MTProxy"
+        found=1
+    fi
+    
     if [ -d "/opt/mtproxy" ]; then
-        log_warning "Vẫn còn thư mục /opt/mtproxy"
+        log_warning "Still found legacy directory /opt/mtproxy"
+        found=1
+    fi
+    
+    if [ -f "/etc/systemd/system/MTProxy.service" ]; then
+        log_warning "Still found service file /etc/systemd/system/MTProxy.service"
         found=1
     fi
     
     if [ -f "/etc/systemd/system/mtproxy.service" ]; then
-        log_warning "Vẫn còn file service /etc/systemd/system/mtproxy.service"
+        log_warning "Still found legacy service file /etc/systemd/system/mtproxy.service"
         found=1
     fi
     
-    if systemctl list-unit-files | grep -q mtproxy; then
-        log_warning "Vẫn còn service trong systemd"
+    if systemctl list-unit-files | grep -qiE "MTProxy|mtproxy"; then
+        log_warning "Still found service in systemd"
+        found=1
+    fi
+    
+    if id "$MT_PROXY_USER" &>/dev/null; then
+        log_warning "Still found user: $MT_PROXY_USER"
         found=1
     fi
     
     if [ $found -eq 0 ]; then
-        log_success "Không còn file nào liên quan đến MTProxy"
+        log_success "No remaining files related to MTProxy"
     fi
 }
 
@@ -180,28 +225,27 @@ main() {
     # Xác nhận
     confirm_uninstall
     
-    # Thực hiện các bước gỡ cài đặt
     remove_service
     remove_installation_directory
+    remove_user
     remove_logs
     
     echo ""
-    log_info "Bạn có muốn xóa firewall rules? (có thể ảnh hưởng đến các service khác)"
-    read -p "Xóa firewall rules? (y/n, mặc định: n): " remove_firewall
+    log_info "Do you want to remove firewall rules? (may affect other services)"
+    read -p "Remove firewall rules? (y/n, default: n): " remove_firewall
     if [ "$remove_firewall" = "y" ] || [ "$remove_firewall" = "Y" ]; then
         remove_firewall_rules
     else
-        log_info "Bỏ qua việc xóa firewall rules"
+        log_info "Skipping firewall rules removal"
     fi
     
-    # Kiểm tra lại
     check_remaining_files
     
     echo ""
-    log_success "Đã gỡ cài đặt MTProxy hoàn toàn!"
+    log_success "MTProxy has been completely uninstalled!"
     echo ""
-    log_info "Tất cả các file và service đã được xóa."
-    log_info "Bạn có thể chạy lại install_mtproxy.sh để cài đặt lại nếu cần."
+    log_info "All files and services have been removed."
+    log_info "You can run install_mtproxy.sh again to reinstall if needed."
     echo ""
 }
 
