@@ -395,24 +395,13 @@ update_proxy_config() {
     fi
     
     # Tạo file config mới với format native mtproto-proxy (không phải JSON)
-    # Format: proxy 0.0.0.0:<PORT> { secret = "hex:<SECRET>"; advertise_channel = "<CHANNEL>"; }
-    if [ ! -z "$PROMO_CHANNEL" ]; then
-        # Có channel promo - loại bỏ @ nếu có và đảm bảo format <channel>
-        CHANNEL_NAME=$(echo "$PROMO_CHANNEL" | sed 's/^@//')
-        cat > "$MT_PROXY_CONFIG" << EOF
-proxy 0.0.0.0:$PROXY_PORT {
-    secret = "hex:$SECRET_HEX";
-    advertise_channel = "<$CHANNEL_NAME>";
-}
-EOF
-    else
-        # Không có channel promo
-        cat > "$MT_PROXY_CONFIG" << EOF
+    # Format: proxy 0.0.0.0:<PORT> { secret = "hex:<SECRET>"; }
+    # Note: Channel promo được quản lý qua Telegram bot (@MTProxybot) thông qua proxy tag, không cần set trong config file
+    cat > "$MT_PROXY_CONFIG" << EOF
 proxy 0.0.0.0:$PROXY_PORT {
     secret = "hex:$SECRET_HEX";
 }
 EOF
-    fi
     
     # Đảm bảo quyền sở hữu và permissions đúng
     chown $MT_PROXY_USER:$MT_PROXY_USER "$MT_PROXY_CONFIG"
@@ -803,7 +792,9 @@ main
 # 2. Ví dụ: PROMO_CHANNEL="@your_channel" hoặc PROMO_CHANNEL="https://t.me/your_channel"
 # 3. Để trống nếu không muốn sử dụng Channel Promo
 
-# Channel Promo
+# Channel Promo (tùy chọn - chỉ để tham khảo trong hướng dẫn)
+# Channel promo được quản lý qua Telegram bot (@MTProxybot) thông qua proxy tag
+# Biến này chỉ dùng để hiển thị trong hướng dẫn, không được sử dụng trong config file
 # Ví dụ: "@my_channel" hoặc "https://t.me/my_channel"
 # Để trống nếu không muốn sử dụng Channel Promo
 PROMO_CHANNEL="@hasoftware"
