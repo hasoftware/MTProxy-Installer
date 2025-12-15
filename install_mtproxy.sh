@@ -382,9 +382,14 @@ EOF
 create_service() {
     log_info "Đang tạo systemd service..."
     
-    # Dừng service cũ nếu có
+    # Dừng service cũ nếu có (cả mtproxy và MTProxy)
     if systemctl is-active --quiet mtproxy 2>/dev/null; then
         systemctl stop mtproxy
+        log_info "Đã dừng service mtproxy cũ"
+    fi
+    if systemctl is-active --quiet MTProxy 2>/dev/null; then
+        systemctl stop MTProxy
+        log_info "Đã dừng service MTProxy cũ"
     fi
     
     # Xóa service file cũ nếu có
@@ -493,18 +498,49 @@ start_service() {
         exit 1
     fi
     
-    # Thử chạy trực tiếp để xem lỗi cụ thể
-    log_info "Đang kiểm tra command..."
-    if ! sudo -u $MT_PROXY_USER $MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ') --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M ${WORKERS:-1} --http-stats --nat-info $(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' || hostname -I | awk '{print $1}'):$(curl -s ifconfig.me || curl -s ipinfo.io/ip) 2>&1 | head -20; then
-        log_warning "Command test có lỗi, nhưng sẽ tiếp tục..."
+    # Dừng service cũ nếu đang chạy (để giải phóng port)
+    if systemctl is-active --quiet MTProxy 2>/dev/null; then
+        log_info "Đang dừng service MTProxy cũ..."
+        systemctl stop MTProxy
+        sleep 2
     fi
     
+    # Kiểm tra port có đang được sử dụng không
+    if command -v netstat &> /dev/null; then
+        if netstat -tuln | grep -q ":$PROXY_PORT "; then
+            log_warning "Port $PROXY_PORT đang được sử dụng! Đang tìm process..."
+            netstat -tulnp | grep ":$PROXY_PORT " || true
+            log_warning "Vui lòng dừng process đang sử dụng port $PROXY_PORT hoặc chọn port khác"
+        fi
+    elif command -v ss &> /dev/null; then
+        if ss -tuln | grep -q ":$PROXY_PORT "; then
+            log_warning "Port $PROXY_PORT đang được sử dụng! Đang tìm process..."
+            ss -tulnp | grep ":$PROXY_PORT " || true
+            log_warning "Vui lòng dừng process đang sử dụng port $PROXY_PORT hoặc chọn port khác"
+        fi
+    fi
+    
+    # Khởi động service
+    log_info "Đang khởi động service MTProxy..."
     systemctl restart MTProxy
     
     # Kiểm tra trạng thái
-    sleep 3
+    sleep 5
     if systemctl is-active --quiet MTProxy; then
-        log_success "MTProxy đã khởi động thành công"
+        # Kiểm tra thêm xem service có thực sự đang chạy không
+        if systemctl is-active --quiet MTProxy && ! systemctl is-failed --quiet MTProxy; then
+            log_success "MTProxy đã khởi động thành công"
+        else
+            log_error "MTProxy khởi động thất bại!"
+            echo ""
+            log_info "Chi tiết lỗi:"
+            systemctl status MTProxy --no-pager -l
+            echo ""
+            log_info "Logs gần đây:"
+            journalctl -u MTProxy -n 30 --no-pager
+            echo ""
+            exit 1
+        fi
     else
         log_error "MTProxy khởi động thất bại!"
         echo ""
