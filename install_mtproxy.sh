@@ -394,12 +394,14 @@ update_proxy_config() {
         log_info "Đã xóa file config cũ"
     fi
     
-    # Tạo file config mới với format native mtproto-proxy (không phải JSON)
-    # Format: proxy 0.0.0.0:<PORT> { secret = "hex:<SECRET>"; }
+    # Tạo file config mới với format JSON (TelegramMessenger/MTProxy hỗ trợ JSON)
+    # Format: { "tag": "proxy1", "port": <PORT>, "secret": "<SECRET_HEX>" }
     # Note: Channel promo được quản lý qua Telegram bot (@MTProxybot) thông qua proxy tag, không cần set trong config file
     cat > "$MT_PROXY_CONFIG" << EOF
-proxy 0.0.0.0:$PROXY_PORT {
-    secret = "hex:$SECRET_HEX";
+{
+    "tag": "proxy1",
+    "port": $PROXY_PORT,
+    "secret": "$SECRET_HEX"
 }
 EOF
     
