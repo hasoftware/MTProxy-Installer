@@ -279,6 +279,17 @@ create_config() {
 create_service() {
     log_info "Đang tạo systemd service..."
     
+    # Dừng service cũ nếu có
+    if systemctl is-active --quiet mtproxy 2>/dev/null; then
+        systemctl stop mtproxy
+    fi
+    
+    # Xóa service file cũ nếu có
+    if [ -f "$SERVICE_FILE" ]; then
+        rm -f "$SERVICE_FILE"
+        systemctl daemon-reload
+    fi
+    
     cat > $SERVICE_FILE << EOF
 [Unit]
 Description=MTProxy
