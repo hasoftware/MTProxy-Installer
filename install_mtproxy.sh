@@ -24,7 +24,7 @@ PROMO_CHANNEL=""
 PROXY_PORT=8443  # Port mặc định theo hướng dẫn
 STATS_PORT=8888  # Port cho HTTP stats
 WORKERS="1"
-PROXY_TAG="5e0798c3ee684cdaa06f53225436269f"  # Proxy tag từ @MTProxybot (16-byte hex, ví dụ: 5e0798c3ee684cdaa06f53225436269f)
+PROXY_TAG=""  # Proxy tag từ @MTProxybot (16-byte hex, ví dụ: 5e0798c3ee684cdaa06f53225436269f)
 
 # Hàm log
 log_info() {
@@ -176,18 +176,20 @@ download_telegram_files() {
         log_info "proxy-secret đã tồn tại"
     fi
     
-    # Download proxy-multi.conf
-    if [ ! -f "$MT_PROXY_CONFIG" ]; then
-        curl -s https://core.telegram.org/getProxyConfig -o "$MT_PROXY_CONFIG"
-        if [ $? -eq 0 ] && [ -s "$MT_PROXY_CONFIG" ]; then
-            log_success "Đã tải proxy-multi.conf từ Telegram"
-        else
-            log_error "Không thể tải proxy-multi.conf!"
-            exit 1
-        fi
+    # Download proxy-multi.conf từ Telegram (luôn download lại để có config mới nhất)
+    # Theo hướng dẫn chính thức: "It can change (occasionally), so we encourage you to update it once per day."
+    log_info "Đang tải proxy-multi.conf từ Telegram (luôn cập nhật)..."
+    curl -s https://core.telegram.org/getProxyConfig -o "$MT_PROXY_CONFIG"
+    if [ $? -eq 0 ] && [ -s "$MT_PROXY_CONFIG" ]; then
+        log_success "Đã tải proxy-multi.conf từ Telegram"
     else
-        log_info "proxy-multi.conf đã tồn tại"
+        log_error "Không thể tải proxy-multi.conf!"
+        exit 1
     fi
+    
+    # Đảm bảo quyền sở hữu và permissions đúng
+    chown $MT_PROXY_USER:$MT_PROXY_USER "$MT_PROXY_CONFIG"
+    chmod 644 "$MT_PROXY_CONFIG"
 }
 
 # Hàm tạo secret (hex format theo hướng dẫn)
@@ -376,60 +378,6 @@ EOF
     done
 }
 
-# Hàm cập nhật proxy-multi.conf với secret và channel promo (native mtproto-proxy format)
-update_proxy_config() {
-    log_info "Đang cập nhật proxy-multi.conf với secret và channel promo..."
-    
-    SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
-    
-    # Kiểm tra secret có hợp lệ không
-    if [ -z "$SECRET_HEX" ]; then
-        log_error "Secret không hợp lệ!"
-        exit 1
-    fi
-    
-    # Xóa file config cũ nếu có (có thể là file từ Telegram với format khác)
-    if [ -f "$MT_PROXY_CONFIG" ]; then
-        rm -f "$MT_PROXY_CONFIG"
-        log_info "Đã xóa file config cũ"
-    fi
-    
-    # Tạo file config mới với format JSON (TelegramMessenger/MTProxy hỗ trợ JSON)
-    # Format: { "tag": "proxy1", "port": <PORT>, "secret": "<SECRET_HEX>" }
-    # Note: Channel promo được quản lý qua Telegram bot (@MTProxybot) thông qua proxy tag, không cần set trong config file
-    # Tạo file với quyền root trước, sau đó chuyển ownership
-    cat > "$MT_PROXY_CONFIG" << EOF
-{
-    "tag": "proxy1",
-    "port": $PROXY_PORT,
-    "secret": "$SECRET_HEX"
-}
-EOF
-    
-    # Đảm bảo quyền sở hữu và permissions đúng
-    chown $MT_PROXY_USER:$MT_PROXY_USER "$MT_PROXY_CONFIG"
-    chmod 644 "$MT_PROXY_CONFIG"
-    
-    # Kiểm tra file có được tạo đúng không
-    if [ ! -s "$MT_PROXY_CONFIG" ]; then
-        log_error "Config file không được tạo hoặc rỗng!"
-        exit 1
-    fi
-    
-    # Hiển thị nội dung file để debug (ẩn secret)
-    log_info "Đã tạo config file, kiểm tra nội dung:"
-    cat "$MT_PROXY_CONFIG" | sed "s/\"secret\": \"[^\"]*\"/\"secret\": \"***\"/" | head -5
-    
-    log_success "Đã cập nhật proxy-multi.conf"
-    log_info "Nội dung config (đã ẩn secret):"
-    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
-        log_info "  $line"
-    done
-    
-    # Note: mtproto-proxy không có flag để validate config riêng
-    # Config sẽ được validate khi service khởi động
-}
-
 # Hàm tạo systemd service
 create_service() {
     log_info "Đang tạo systemd service..."
@@ -451,14 +399,20 @@ create_service() {
     # Lấy secret
     SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     
-    # Xây dựng command theo script của bạn (TelegramMessenger/MTProxy với JSON config)
-    # Format: mtproto-proxy -H <proxy-port> --aes-pwd <password-file> <config-file> -M <workers> [-P <proxy-tag>]
-    # Note: Secret được đặt trong config file, không dùng -S flag
-    # TelegramMessenger/MTProxy đơn giản hơn, không cần -u, -p, --http-stats, --nat-info
+    # Xây dựng command theo hướng dẫn chính thức từ GitHub
+    # Format: mtproto-proxy -u <user> -p <stats-port> -H <proxy-port> -S <secret> --aes-pwd <password-file> <config-file> -M <workers> [-P <proxy-tag>]
+    # Theo: https://github.com/TelegramMessenger/MTProxy
+    # Secret được truyền qua -S flag, không đặt trong config file
+    # Config file (proxy-multi.conf) được download từ Telegram
+    
+    # Base command với user, stats port, proxy port, secret, và config file
+    EXEC_START="$MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $SECRET_HEX --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG"
+    
+    # Thêm workers
     if [ ! -z "$WORKERS" ]; then
-        EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M $WORKERS"
+        EXEC_START="$EXEC_START -M $WORKERS"
     else
-        EXEC_START="$MT_PROXY_BIN -H $PROXY_PORT --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M 1"
+        EXEC_START="$EXEC_START -M 1"
     fi
     
     # Thêm proxy tag nếu có (từ @MTProxybot)
@@ -783,7 +737,6 @@ main() {
     download_telegram_files
     generate_secret
     ask_proxy_tag
-    update_proxy_config
     configure_firewall
     create_service
     start_service
