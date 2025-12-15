@@ -41,10 +41,15 @@ confirm_uninstall() {
     echo ""
     read -p "Nhập 'yes' để tiếp tục: " confirm
     
+    # Loại bỏ khoảng trắng và chuyển sang lowercase
+    confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]' | xargs)
+    
     if [ "$confirm" != "yes" ]; then
         log_info "Đã hủy gỡ cài đặt."
         exit 0
     fi
+    
+    log_info "Đã xác nhận, bắt đầu gỡ cài đặt..."
 }
 
 # Hàm dừng và xóa service
