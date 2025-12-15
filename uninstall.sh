@@ -44,15 +44,16 @@ confirm_uninstall() {
     # Loại bỏ khoảng trắng đầu cuối và chuyển sang lowercase
     confirm=$(echo "$confirm" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
     
-    # Debug: hiển thị giá trị đã nhập (có thể comment lại sau)
-    # echo "Debug: Bạn đã nhập: [$confirm]"
-    
-    if [ "$confirm" != "yes" ]; then
-        log_info "Đã hủy gỡ cài đặt."
-        exit 0
-    fi
-    
-    log_info "Đã xác nhận, bắt đầu gỡ cài đặt..."
+    # Kiểm tra với nhiều cách viết
+    case "$confirm" in
+        yes|y|YES|Y)
+            log_info "Đã xác nhận, bắt đầu gỡ cài đặt..."
+            ;;
+        *)
+            log_info "Đã hủy gỡ cài đặt."
+            exit 0
+            ;;
+    esac
 }
 
 # Hàm dừng và xóa service
