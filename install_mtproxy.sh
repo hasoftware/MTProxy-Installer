@@ -348,16 +348,8 @@ EOF
         log_info "  $line"
     done
     
-    # Validate config file
-    log_info "Đang kiểm tra tính hợp lệ của config file..."
-    if $MT_PROXY_BIN -c "$MT_PROXY_CONFIG" > /dev/null 2>&1; then
-        log_success "Config file hợp lệ"
-    else
-        log_error "Config file không hợp lệ! Kiểm tra lại cú pháp."
-        log_info "Chi tiết lỗi:"
-        $MT_PROXY_BIN -c "$MT_PROXY_CONFIG" 2>&1 || true
-        exit 1
-    fi
+    # Note: mtproto-proxy không có flag để validate config riêng
+    # Config sẽ được validate khi service khởi động
 }
 
 # Hàm tạo systemd service
