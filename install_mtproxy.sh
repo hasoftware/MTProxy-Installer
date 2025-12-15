@@ -322,8 +322,25 @@ start_service() {
     # Kiểm tra config có chứa secret và port không
     if ! grep -q "^secret=" "$MT_PROXY_CONFIG" || ! grep -q "^port=" "$MT_PROXY_CONFIG"; then
         log_error "Config file thiếu secret hoặc port!"
+        log_info "Nội dung config file:"
+        cat "$MT_PROXY_CONFIG"
         exit 1
     fi
+    
+    # Kiểm tra config file không có dòng trống hoặc comment không hợp lệ
+    if grep -q "^\[" "$MT_PROXY_CONFIG" || grep -q "^#" "$MT_PROXY_CONFIG"; then
+        log_warning "Config file có thể chứa comment hoặc format không hợp lệ"
+        log_info "Đang làm sạch config file..."
+        # Chỉ giữ lại các dòng bắt đầu bằng chữ cái và có dấu =
+        grep -E '^[a-zA-Z_]+=' "$MT_PROXY_CONFIG" > "$MT_PROXY_CONFIG.tmp"
+        mv "$MT_PROXY_CONFIG.tmp" "$MT_PROXY_CONFIG"
+    fi
+    
+    # Hiển thị config file để debug (ẩn secret)
+    log_info "Kiểm tra config file trước khi khởi động:"
+    sed 's/^secret=.*/secret=***/' "$MT_PROXY_CONFIG" | while read line; do
+        log_info "  $line"
+    done
     
     systemctl restart mtproxy
     
