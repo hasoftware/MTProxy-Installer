@@ -379,7 +379,7 @@ create_service() {
     
     # Xây dựng command theo hướng dẫn chính thức
     # Format: mtproto-proxy -u <user> -p <stats-port> -H <proxy-port> -S <secret> --aes-pwd <password-file> <config-file> -M <workers> --http-stats --nat-info <private-ip>:<public-ip>
-    EXEC_START="$MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $SECRET_HEX --aes-pwd proxy-secret proxy-multi.conf"
+    EXEC_START="$MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $SECRET_HEX --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG"
     
     # Thêm workers
     if [ ! -z "$WORKERS" ]; then
@@ -453,6 +453,23 @@ start_service() {
     
     log_info "Tất cả các file cần thiết đã sẵn sàng"
     
+    # Kiểm tra quyền truy cập của user mtproxy
+    if ! sudo -u $MT_PROXY_USER test -r "$MT_PROXY_CONFIG"; then
+        log_error "User $MT_PROXY_USER không có quyền đọc file config!"
+        exit 1
+    fi
+    
+    if ! sudo -u $MT_PROXY_USER test -r "$MT_PROXY_AES_PWD"; then
+        log_error "User $MT_PROXY_USER không có quyền đọc file proxy-secret!"
+        exit 1
+    fi
+    
+    # Thử chạy trực tiếp để xem lỗi cụ thể
+    log_info "Đang kiểm tra command..."
+    if ! sudo -u $MT_PROXY_USER $MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ') --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG -M ${WORKERS:-1} --http-stats --nat-info $(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' || hostname -I | awk '{print $1}'):$(curl -s ifconfig.me || curl -s ipinfo.io/ip) 2>&1 | head -20; then
+        log_warning "Command test có lỗi, nhưng sẽ tiếp tục..."
+    fi
+    
     systemctl restart MTProxy
     
     # Kiểm tra trạng thái
@@ -466,10 +483,13 @@ start_service() {
         systemctl status MTProxy --no-pager -l
         echo ""
         log_info "Logs gần đây:"
-        journalctl -u MTProxy -n 20 --no-pager
+        journalctl -u MTProxy -n 30 --no-pager
         echo ""
         log_info "Kiểm tra các file:"
         ls -la $MT_PROXY_DIR/
+        echo ""
+        log_info "Kiểm tra quyền truy cập:"
+        sudo -u $MT_PROXY_USER ls -la $MT_PROXY_DIR/ 2>&1 || true
         echo ""
         exit 1
     fi
