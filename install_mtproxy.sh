@@ -146,7 +146,16 @@ generate_secret() {
     log_info "Đang tạo secret..."
     
     if [ ! -f "$MT_PROXY_SECRET" ]; then
-        $MT_PROXY_BIN -g > $MT_PROXY_SECRET
+        # Tạo secret: 16 bytes random được encode sang base64
+        # MTProxy secret phải là 16 bytes được encode base64
+        if command -v openssl &> /dev/null; then
+            openssl rand -base64 16 | tr -d '\n' > $MT_PROXY_SECRET
+        elif command -v head &> /dev/null && [ -c /dev/urandom ]; then
+            head -c 16 /dev/urandom | base64 | tr -d '\n' > $MT_PROXY_SECRET
+        else
+            # Fallback: sử dụng /dev/urandom trực tiếp
+            dd if=/dev/urandom bs=16 count=1 2>/dev/null | base64 | tr -d '\n' > $MT_PROXY_SECRET
+        fi
         log_success "Đã tạo secret mới"
     else
         log_info "Sử dụng secret hiện có"
