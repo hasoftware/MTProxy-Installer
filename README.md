@@ -125,8 +125,10 @@ sudo ./update_promo.sh ""
 MTProxy-Installer/
 ├── install_mtproxy.sh    # Script chính để cài đặt (có phần cấu hình ở cuối file)
 ├── update_promo.sh      # Script cập nhật Channel Promo
+├── uninstall.sh         # Script gỡ cài đặt hoàn toàn
 ├── README.md            # Tài liệu hướng dẫn
 └── .gitignore           # Git ignore file
+```
 
 Sau khi cài đặt:
 /opt/mtproxy/
@@ -137,6 +139,27 @@ Sau khi cài đặt:
 ```
 
 ## Gỡ cài đặt
+
+### Sử dụng script tự động (Khuyến nghị)
+
+```bash
+# Cấp quyền thực thi
+chmod +x uninstall.sh
+
+# Chạy script gỡ cài đặt
+sudo ./uninstall.sh
+```
+
+Script sẽ:
+- Dừng và xóa MTProxy service
+- Xóa thư mục cài đặt `/opt/mtproxy`
+- Xóa logs
+- Hỏi bạn có muốn xóa firewall rules không
+- Kiểm tra và báo cáo các file còn sót lại
+
+### Gỡ cài đặt thủ công
+
+Nếu bạn muốn gỡ cài đặt thủ công:
 
 ```bash
 # Dừng và xóa service
