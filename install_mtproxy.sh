@@ -26,7 +26,7 @@ STATS_PORT=8888  # Port cho HTTP stats
 WORKERS="1"
 PROXY_TAG=""  # Proxy tag từ @MTProxybot (16-byte hex, ví dụ: 5e0798c3ee684cdaa06f53225436269f)
 
-# Hàm log
+# Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -43,7 +43,7 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Hàm phát hiện hệ điều hành
+# Detect operating system
 detect_os() {
     log_info "Đang phát hiện hệ điều hành..."
     
@@ -78,7 +78,7 @@ detect_os() {
     log_success "Package manager: $PKG_MANAGER"
 }
 
-# Hàm kiểm tra port đã được sử dụng
+# Check if port is already in use
 check_port() {
     if command -v netstat &> /dev/null; then
         if netstat -tuln | grep -q ":$PROXY_PORT "; then
@@ -94,7 +94,7 @@ check_port() {
     return 0
 }
 
-# Hàm cài đặt dependencies
+# Install dependencies
 install_dependencies() {
     log_info "Đang cài đặt dependencies..."
     
@@ -110,7 +110,7 @@ install_dependencies() {
     log_success "Đã cài đặt dependencies thành công"
 }
 
-# Hàm tải và compile MTProxy
+# Download and compile MTProxy
 install_mtproxy() {
     log_info "Đang tải và compile MTProxy..."
     
@@ -159,7 +159,7 @@ install_mtproxy() {
     log_success "Đã compile MTProxy thành công"
 }
 
-# Hàm download proxy-secret và proxy-multi.conf từ Telegram
+# Download proxy-secret and proxy-multi.conf from Telegram
 download_telegram_files() {
     log_info "Đang tải các file cấu hình từ Telegram..."
     
@@ -176,8 +176,8 @@ download_telegram_files() {
         log_info "proxy-secret đã tồn tại"
     fi
     
-    # Download proxy-multi.conf từ Telegram (luôn download lại để có config mới nhất)
-    # Theo hướng dẫn chính thức: "It can change (occasionally), so we encourage you to update it once per day."
+    # Download proxy-multi.conf from Telegram (always update to get latest config)
+    # Official docs: "It can change (occasionally), so we encourage you to update it once per day."
     log_info "Đang tải proxy-multi.conf từ Telegram (luôn cập nhật)..."
     curl -s https://core.telegram.org/getProxyConfig -o "$MT_PROXY_CONFIG"
     if [ $? -eq 0 ] && [ -s "$MT_PROXY_CONFIG" ]; then
@@ -187,17 +187,17 @@ download_telegram_files() {
         exit 1
     fi
     
-    # Đảm bảo quyền sở hữu và permissions đúng
+    # Set proper ownership and permissions
     chown $MT_PROXY_USER:$MT_PROXY_USER "$MT_PROXY_CONFIG"
     chmod 644 "$MT_PROXY_CONFIG"
 }
 
-# Hàm tạo secret (hex format theo hướng dẫn)
+# Generate secret in hex format
 generate_secret() {
     log_info "Đang tạo secret..."
     
     if [ ! -f "$MT_PROXY_SECRET_FILE" ]; then
-        # Tạo secret: 16 bytes random, convert sang hex (theo hướng dẫn)
+        # Generate secret: 16 bytes random, convert to hex
         # Format: head -c 16 /dev/urandom | xxd -ps
         if command -v xxd &> /dev/null; then
             SECRET_HEX=$(head -c 16 /dev/urandom | xxd -ps)
@@ -243,7 +243,7 @@ generate_secret() {
     echo ""
 }
 
-# Hàm hỏi người dùng nhập Proxy Tag từ bot
+# Prompt user to enter Proxy Tag from bot
 ask_proxy_tag() {
     echo ""
     echo "=========================================="
@@ -251,7 +251,7 @@ ask_proxy_tag() {
     echo "=========================================="
     echo ""
     
-    # Nếu đã có PROXY_TAG trong config và không phải empty, hỏi có muốn dùng không
+    # If PROXY_TAG already exists in config and not empty, ask if user wants to use it
     if [ ! -z "$PROXY_TAG" ] && [ "$PROXY_TAG" != "" ]; then
         echo "Proxy Tag đã được cấu hình: $PROXY_TAG"
         read -p "Bạn có muốn sử dụng Proxy Tag này? (y/n, mặc định: y): " USE_EXISTING_TAG
@@ -262,18 +262,18 @@ ask_proxy_tag() {
         fi
     fi
     
-    # Hỏi người dùng nhập Proxy Tag
+    # Prompt user to enter Proxy Tag
     while true; do
         read -p "Nhập Proxy Tag từ @MTProxybot (32 ký tự hex, hoặc Enter để bỏ qua): " USER_PROXY_TAG
         
-        # Nếu người dùng nhấn Enter (bỏ qua)
+        # If user presses Enter (skip)
         if [ -z "$USER_PROXY_TAG" ]; then
             log_warning "Bỏ qua Proxy Tag. Bạn có thể thêm sau bằng cách chỉnh sửa service file."
             PROXY_TAG=""
             return 0
         fi
         
-        # Kiểm tra format: phải là 32 ký tự hex
+        # Validate format: must be 32 hex characters
         if [[ "$USER_PROXY_TAG" =~ ^[0-9a-fA-F]{32}$ ]]; then
             PROXY_TAG="$USER_PROXY_TAG"
             log_success "Đã nhận Proxy Tag: $PROXY_TAG"
@@ -286,7 +286,7 @@ ask_proxy_tag() {
     done
 }
 
-# Hàm tạo user mtproxy
+# Create mtproxy user
 create_mtproxy_user() {
     log_info "Đang tạo user mtproxy..."
     
@@ -302,7 +302,7 @@ create_mtproxy_user() {
     log_success "Đã cấp quyền sở hữu cho user $MT_PROXY_USER"
 }
 
-# Hàm chuyển đổi secret từ hex sang base64 (để dùng trong proxy link)
+# Convert secret from hex to base64 (for proxy link)
 convert_hex_to_base64() {
     local hex_secret=$1
     
@@ -320,7 +320,7 @@ convert_hex_to_base64() {
     fi
 }
 
-# Hàm lấy IP public và private
+# Get public and private IP addresses
 get_ips() {
     PUBLIC_IP=$(curl -s ifconfig.me || curl -s ipinfo.io/ip || curl -s icanhazip.com)
     if [ -z "$PUBLIC_IP" ]; then
@@ -378,7 +378,7 @@ EOF
     done
 }
 
-# Hàm tạo systemd service
+# Create systemd service
 create_service() {
     log_info "Đang tạo systemd service..."
     
@@ -392,35 +392,35 @@ create_service() {
         log_info "Đã dừng service MTProxy cũ"
     fi
     
-    # Xóa service file cũ nếu có
+    # Remove old service file if exists
     if [ -f "$SERVICE_FILE" ]; then
         rm -f "$SERVICE_FILE"
         systemctl daemon-reload
     fi
     
-    # Lấy IPs cho nat-info
+    # Get IPs for nat-info
     get_ips
     
-    # Lấy secret
+    # Get secret
     SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     
-    # Xây dựng command theo hướng dẫn chính thức từ GitHub
+    # Build command according to official GitHub documentation
     # Format: mtproto-proxy -u <user> -p <stats-port> -H <proxy-port> -S <secret> --aes-pwd <password-file> <config-file> -M <workers> [-P <proxy-tag>]
-    # Theo: https://github.com/TelegramMessenger/MTProxy
-    # Secret được truyền qua -S flag, không đặt trong config file
-    # Config file (proxy-multi.conf) được download từ Telegram
+    # Reference: https://github.com/TelegramMessenger/MTProxy
+    # Secret is passed via -S flag, not in config file
+    # Config file (proxy-multi.conf) is downloaded from Telegram
     
-    # Base command với user, stats port, proxy port, secret, và config file
+    # Base command with user, stats port, proxy port, secret, and config file
     EXEC_START="$MT_PROXY_BIN -u $MT_PROXY_USER -p $STATS_PORT -H $PROXY_PORT -S $SECRET_HEX --aes-pwd $MT_PROXY_AES_PWD $MT_PROXY_CONFIG"
     
-    # Thêm workers
+    # Add workers
     if [ ! -z "$WORKERS" ]; then
         EXEC_START="$EXEC_START -M $WORKERS"
     else
         EXEC_START="$EXEC_START -M 1"
     fi
     
-    # Thêm proxy tag nếu có (từ @MTProxybot)
+    # Add proxy tag if available (from @MTProxybot)
     if [ ! -z "$PROXY_TAG" ]; then
         EXEC_START="$EXEC_START -P $PROXY_TAG"
     fi
@@ -447,31 +447,23 @@ EOF
     log_info "Command: $EXEC_START"
 }
 
-# Hàm khởi động service
+# Start MTProxy service
 start_service() {
     log_info "Đang khởi động MTProxy service..."
     
-    # Kiểm tra config file trước khi khởi động
+    # Check required files
     if [ ! -f "$MT_PROXY_CONFIG" ]; then
         log_error "File config không tồn tại: $MT_PROXY_CONFIG"
         exit 1
     fi
     
-    # Kiểm tra binary có tồn tại không
     if [ ! -f "$MT_PROXY_BIN" ]; then
         log_error "Binary không tồn tại: $MT_PROXY_BIN"
         exit 1
     fi
     
-    # Kiểm tra config file có hợp lệ không (đọc được và không rỗng)
     if [ ! -s "$MT_PROXY_CONFIG" ]; then
         log_error "Config file rỗng hoặc không hợp lệ!"
-        exit 1
-    fi
-    
-    # Kiểm tra các file cần thiết
-    if [ ! -f "$MT_PROXY_CONFIG" ]; then
-        log_error "File proxy-multi.conf không tồn tại!"
         exit 1
     fi
     
@@ -487,7 +479,7 @@ start_service() {
     
     log_info "Tất cả các file cần thiết đã sẵn sàng"
     
-    # Kiểm tra quyền truy cập của user mtproxy
+    # Check file permissions for mtproxy user
     if ! sudo -u $MT_PROXY_USER test -r "$MT_PROXY_CONFIG"; then
         log_error "User $MT_PROXY_USER không có quyền đọc file config!"
         exit 1
@@ -498,14 +490,14 @@ start_service() {
         exit 1
     fi
     
-    # Dừng service cũ nếu đang chạy (để giải phóng port)
+    # Stop old service if running (to free port)
     if systemctl is-active --quiet MTProxy 2>/dev/null; then
         log_info "Đang dừng service MTProxy cũ..."
         systemctl stop MTProxy
         sleep 2
     fi
     
-    # Kiểm tra port có đang được sử dụng không
+    # Check if port is already in use
     if command -v netstat &> /dev/null; then
         if netstat -tuln | grep -q ":$PROXY_PORT "; then
             log_warning "Port $PROXY_PORT đang được sử dụng! Đang tìm process..."
@@ -520,14 +512,13 @@ start_service() {
         fi
     fi
     
-    # Khởi động service
+    # Start service
     log_info "Đang khởi động service MTProxy..."
     systemctl restart MTProxy
     
-    # Kiểm tra trạng thái
+    # Check service status
     sleep 5
     if systemctl is-active --quiet MTProxy; then
-        # Kiểm tra thêm xem service có thực sự đang chạy không
         if systemctl is-active --quiet MTProxy && ! systemctl is-failed --quiet MTProxy; then
             log_success "MTProxy đã khởi động thành công"
         else
@@ -560,17 +551,17 @@ start_service() {
     fi
 }
 
-# Hàm xuất thông tin proxy
+# Export proxy information
 export_proxy_info() {
     log_info "Đang tạo thông tin proxy..."
     
     SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     get_ips
     
-    # Chuyển đổi secret từ hex sang base64 để dùng trong proxy link
+    # Convert secret from hex to base64 for proxy link
     SECRET_BASE64=$(convert_hex_to_base64 "$SECRET_HEX")
     
-    # Tạo proxy link (sử dụng base64 secret)
+    # Create proxy link (using base64 secret)
     PROXY_LINK="tg://proxy?server=$PUBLIC_IP&port=$PROXY_PORT&secret=$SECRET_BASE64"
     
     echo ""
@@ -661,7 +652,7 @@ EOF
     log_success "Thông tin đã được lưu vào: $MT_PROXY_DIR/proxy_info.txt"
 }
 
-# Hàm cấu hình firewall
+# Configure firewall
 configure_firewall() {
     log_info "Đang cấu hình firewall..."
     
@@ -698,7 +689,7 @@ configure_firewall() {
     fi
 }
 
-# Hàm đọc cấu hình từ chính script
+# Load configuration from script
 load_config() {
     log_info "Đang đọc cấu hình từ script..."
     
@@ -744,7 +735,7 @@ load_config() {
     fi
 }
 
-# Hàm main
+# Main function
 main() {
     echo ""
     log_info "Bắt đầu cài đặt MTProxy..."
