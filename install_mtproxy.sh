@@ -274,7 +274,7 @@ get_ips() {
 create_config() {
     log_info "Đang tạo cấu hình..."
     
-    SECRET_HEX=$(cat $MT_PROXY_SECRET | head -n 1 | tr -d '\n\r ')
+    SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     
     # Kiểm tra secret có hợp lệ không
     if [ -z "$SECRET_HEX" ]; then
@@ -658,9 +658,9 @@ main
 # Để trống nếu không muốn sử dụng Channel Promo
 PROMO_CHANNEL="@hasoftware"
 
-# Port cho MTProxy (mặc định: 443)
+# Port cho MTProxy (mặc định: 8443 theo hướng dẫn)
 # Đảm bảo port này chưa được sử dụng bởi service khác
-PROXY_PORT=443
+PROXY_PORT=8443
 
 # Số lượng workers (mặc định: không giới hạn)
 # Để trống = không giới hạn workers (khuyến nghị)
