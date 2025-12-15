@@ -306,7 +306,7 @@ EOF
     done
 }
 
-# Hàm cập nhật proxy-multi.conf với secret và channel promo
+# Hàm cập nhật proxy-multi.conf với secret và channel promo (native mtproto-proxy format)
 update_proxy_config() {
     log_info "Đang cập nhật proxy-multi.conf với secret và channel promo..."
     
@@ -318,42 +318,46 @@ update_proxy_config() {
         exit 1
     fi
     
-    # Kiểm tra file proxy-multi.conf đã được download chưa
-    if [ ! -f "$MT_PROXY_CONFIG" ]; then
-        log_error "File $MT_PROXY_CONFIG không tồn tại! Vui lòng chạy lại download_telegram_files()"
-        exit 1
-    fi
-    
-    # Tạo file config mới với secret và channel promo
-    # Đọc file gốc và cập nhật
+    # Tạo file config mới với format native mtproto-proxy (không phải JSON)
+    # Format: proxy 0.0.0.0:<PORT> { secret = "hex:<SECRET>"; advertise_channel = "<CHANNEL>"; }
     if [ ! -z "$PROMO_CHANNEL" ]; then
-        # Có channel promo
+        # Có channel promo - loại bỏ @ nếu có và đảm bảo format <channel>
+        CHANNEL_NAME=$(echo "$PROMO_CHANNEL" | sed 's/^@//')
         cat > "$MT_PROXY_CONFIG" << EOF
-{
-    "tag": "proxy1",
-    "port": $PROXY_PORT,
-    "secret": "$SECRET_HEX",
-    "sponsored_channel": {
-        "channel_username": "$PROMO_CHANNEL"
-    }
+proxy 0.0.0.0:$PROXY_PORT {
+    secret = "hex:$SECRET_HEX";
+    advertise_channel = "<$CHANNEL_NAME>";
 }
 EOF
     else
         # Không có channel promo
         cat > "$MT_PROXY_CONFIG" << EOF
-{
-    "tag": "proxy1",
-    "port": $PROXY_PORT,
-    "secret": "$SECRET_HEX"
+proxy 0.0.0.0:$PROXY_PORT {
+    secret = "hex:$SECRET_HEX";
 }
 EOF
     fi
     
+    # Đảm bảo quyền sở hữu và permissions đúng
+    chown $MT_PROXY_USER:$MT_PROXY_USER "$MT_PROXY_CONFIG"
+    chmod 600 "$MT_PROXY_CONFIG"
+    
     log_success "Đã cập nhật proxy-multi.conf"
     log_info "Nội dung config (đã ẩn secret):"
-    sed 's/"secret": "[^"]*"/"secret": "***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
+    sed 's/secret = "hex:[^"]*"/secret = "hex:***"/' "$MT_PROXY_CONFIG" | while IFS= read -r line; do
         log_info "  $line"
     done
+    
+    # Validate config file
+    log_info "Đang kiểm tra tính hợp lệ của config file..."
+    if $MT_PROXY_BIN -c "$MT_PROXY_CONFIG" > /dev/null 2>&1; then
+        log_success "Config file hợp lệ"
+    else
+        log_error "Config file không hợp lệ! Kiểm tra lại cú pháp."
+        log_info "Chi tiết lỗi:"
+        $MT_PROXY_BIN -c "$MT_PROXY_CONFIG" 2>&1 || true
+        exit 1
+    fi
 }
 
 # Hàm tạo systemd service
