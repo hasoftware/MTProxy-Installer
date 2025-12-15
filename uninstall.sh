@@ -41,8 +41,11 @@ confirm_uninstall() {
     echo ""
     read -p "Nhập 'yes' để tiếp tục: " confirm
     
-    # Loại bỏ khoảng trắng và chuyển sang lowercase
-    confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]' | xargs)
+    # Loại bỏ khoảng trắng đầu cuối và chuyển sang lowercase
+    confirm=$(echo "$confirm" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
+    
+    # Debug: hiển thị giá trị đã nhập (có thể comment lại sau)
+    # echo "Debug: Bạn đã nhập: [$confirm]"
     
     if [ "$confirm" != "yes" ]; then
         log_info "Đã hủy gỡ cài đặt."
