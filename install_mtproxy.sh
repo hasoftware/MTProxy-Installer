@@ -261,7 +261,8 @@ create_config() {
     
     log_success "Đã tạo cấu hình"
     log_info "Nội dung config:"
-    while IFS= read -r line; do
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Chỉ hiển thị các dòng hợp lệ (bắt đầu bằng chữ cái và có dấu =)
         if [[ $line =~ ^secret= ]]; then
             log_info "  secret=*** (đã ẩn)"
         elif [[ $line =~ ^[a-zA-Z_]+= ]]; then
@@ -335,11 +336,15 @@ start_service() {
         mv "$MT_PROXY_CONFIG.tmp" "$MT_PROXY_CONFIG"
     fi
     
-    # Hiển thị config file để debug (ẩn secret)
+    # Hiển thị config file để debug (ẩn secret và chỉ hiển thị dòng hợp lệ)
     log_info "Kiểm tra config file trước khi khởi động:"
-    sed 's/^secret=.*/secret=***/' "$MT_PROXY_CONFIG" | while read line; do
-        log_info "  $line"
-    done
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ $line =~ ^secret= ]]; then
+            log_info "  secret=*** (đã ẩn)"
+        elif [[ $line =~ ^[a-zA-Z_]+= ]]; then
+            log_info "  $line"
+        fi
+    done < "$MT_PROXY_CONFIG"
     
     systemctl restart mtproxy
     
