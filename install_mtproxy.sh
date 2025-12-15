@@ -24,7 +24,7 @@ PROMO_CHANNEL=""
 PROXY_PORT=8443  # Port mặc định theo hướng dẫn
 STATS_PORT=8888  # Port cho HTTP stats
 WORKERS="1"
-PROXY_TAG=""  # Proxy tag từ @MTProxybot (16-byte hex, ví dụ: 5e0798c3ee684cdaa06f53225436269f)
+PROXY_TAG="5e0798c3ee684cdaa06f53225436269f"  # Proxy tag từ @MTProxybot (16-byte hex, ví dụ: 5e0798c3ee684cdaa06f53225436269f)
 
 # Hàm log
 log_info() {
@@ -213,6 +213,73 @@ generate_secret() {
     
     SECRET_HEX=$(cat $MT_PROXY_SECRET_FILE | head -n 1 | tr -d '\n\r ')
     log_info "Secret (hex): $SECRET_HEX"
+    
+    # Lấy IP để hiển thị trong hướng dẫn
+    PUBLIC_IP=$(curl -s ifconfig.me || curl -s ipinfo.io/ip || curl -s icanhazip.com || echo "<IP_SERVER>")
+    
+    # Hiển thị secret và hướng dẫn đăng ký với bot
+    echo ""
+    echo "=========================================="
+    echo "  SECRET KEY CỦA BẠN"
+    echo "=========================================="
+    echo ""
+    echo "Secret Key (Hex): $SECRET_HEX"
+    echo ""
+    echo "Hãy làm theo các bước sau để đăng ký proxy với @MTProxybot:"
+    echo ""
+    echo "1. Mở Telegram và tìm bot: @MTProxybot"
+    echo "2. Gửi lệnh: /newproxy"
+    echo "3. Bot sẽ hỏi Secret Key, gửi: $SECRET_HEX"
+    echo "4. Bot sẽ hỏi IP và Port, gửi: $PUBLIC_IP:$PROXY_PORT"
+    echo "5. Bot sẽ trả về Proxy Tag (32 ký tự hex)"
+    echo ""
+    echo "Sau khi nhận được Proxy Tag, quay lại đây và nhập vào."
+    echo ""
+    echo "=========================================="
+    echo ""
+}
+
+# Hàm hỏi người dùng nhập Proxy Tag từ bot
+ask_proxy_tag() {
+    echo ""
+    echo "=========================================="
+    echo "  NHẬP PROXY TAG TỪ BOT"
+    echo "=========================================="
+    echo ""
+    
+    # Nếu đã có PROXY_TAG trong config và không phải empty, hỏi có muốn dùng không
+    if [ ! -z "$PROXY_TAG" ] && [ "$PROXY_TAG" != "" ]; then
+        echo "Proxy Tag đã được cấu hình: $PROXY_TAG"
+        read -p "Bạn có muốn sử dụng Proxy Tag này? (y/n, mặc định: y): " USE_EXISTING_TAG
+        USE_EXISTING_TAG=${USE_EXISTING_TAG:-y}
+        if [[ "$USE_EXISTING_TAG" =~ ^[Yy]$ ]]; then
+            log_info "Sử dụng Proxy Tag đã cấu hình: $PROXY_TAG"
+            return 0
+        fi
+    fi
+    
+    # Hỏi người dùng nhập Proxy Tag
+    while true; do
+        read -p "Nhập Proxy Tag từ @MTProxybot (32 ký tự hex, hoặc Enter để bỏ qua): " USER_PROXY_TAG
+        
+        # Nếu người dùng nhấn Enter (bỏ qua)
+        if [ -z "$USER_PROXY_TAG" ]; then
+            log_warning "Bỏ qua Proxy Tag. Bạn có thể thêm sau bằng cách chỉnh sửa service file."
+            PROXY_TAG=""
+            return 0
+        fi
+        
+        # Kiểm tra format: phải là 32 ký tự hex
+        if [[ "$USER_PROXY_TAG" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            PROXY_TAG="$USER_PROXY_TAG"
+            log_success "Đã nhận Proxy Tag: $PROXY_TAG"
+            return 0
+        else
+            log_error "Proxy Tag không hợp lệ! Phải là 32 ký tự hex (0-9, a-f, A-F)"
+            echo "Ví dụ: 5e0798c3ee684cdaa06f53225436269f"
+            echo ""
+        fi
+    done
 }
 
 # Hàm tạo user mtproxy
@@ -705,6 +772,7 @@ main() {
     create_mtproxy_user
     download_telegram_files
     generate_secret
+    ask_proxy_tag
     update_proxy_config
     configure_firewall
     create_service
