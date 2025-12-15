@@ -290,6 +290,21 @@ create_service() {
         systemctl daemon-reload
     fi
     
+    # Xây dựng command với các option giống script của bạn
+    # Format: mtproto-proxy -H <port> -M <workers> <config-file>
+    EXEC_START="$MT_PROXY_BIN"
+    
+    # Thêm HTTP port option
+    EXEC_START="$EXEC_START -H $PROXY_PORT"
+    
+    # Thêm workers nếu được cấu hình
+    if [ ! -z "$WORKERS" ]; then
+        EXEC_START="$EXEC_START -M $WORKERS"
+    fi
+    
+    # Thêm config file ở cuối
+    EXEC_START="$EXEC_START $MT_PROXY_CONFIG"
+    
     cat > $SERVICE_FILE << EOF
 [Unit]
 Description=MTProxy
@@ -298,7 +313,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$MT_PROXY_DIR
-ExecStart=$MT_PROXY_BIN $MT_PROXY_CONFIG
+ExecStart=$EXEC_START
 Restart=always
 RestartSec=10
 User=root
@@ -310,6 +325,7 @@ EOF
     systemctl daemon-reload
     systemctl enable mtproxy
     log_success "Đã tạo systemd service"
+    log_info "Command: $EXEC_START"
 }
 
 # Hàm khởi động service
