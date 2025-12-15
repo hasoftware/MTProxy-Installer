@@ -234,41 +234,40 @@ create_config() {
     
     # Tạo config file - MTProxy yêu cầu format đơn giản, không có comment
     # Format: secret=... port=... workers=... (nếu có) promo=... (nếu có)
-    {
-        echo "secret=$SECRET"
-        echo "port=$PROXY_PORT"
-        
-        # Thêm workers nếu được cấu hình
-        if [ ! -z "$WORKERS" ]; then
-            echo "workers=$WORKERS"
-        fi
-        
-        # Thêm promo channel nếu có
-        if [ ! -z "$PROMO_CHANNEL" ]; then
-            echo "promo=$PROMO_CHANNEL"
-        fi
-    } > $MT_PROXY_CONFIG
+    # Sử dụng exec để đảm bảo không có output nào khác được ghi vào file
+    exec 3>$MT_PROXY_CONFIG
+    echo "secret=$SECRET" >&3
+    echo "port=$PROXY_PORT" >&3
     
-    # Log thông tin (sau khi đã tạo file)
+    # Thêm workers nếu được cấu hình
     if [ ! -z "$WORKERS" ]; then
+        echo "workers=$WORKERS" >&3
         log_info "Workers được cấu hình: $WORKERS"
     else
         log_info "Workers: không giới hạn"
     fi
     
+    # Thêm promo channel nếu có
     if [ ! -z "$PROMO_CHANNEL" ]; then
+        echo "promo=$PROMO_CHANNEL" >&3
         log_success "Đã thêm Channel Promo: $PROMO_CHANNEL"
     fi
     
+    exec 3>&-
+    
+    # Làm sạch config file - chỉ giữ các dòng hợp lệ
+    grep -E '^[a-zA-Z_]+=' "$MT_PROXY_CONFIG" > "$MT_PROXY_CONFIG.tmp" 2>/dev/null
+    mv "$MT_PROXY_CONFIG.tmp" "$MT_PROXY_CONFIG"
+    
     log_success "Đã tạo cấu hình"
     log_info "Nội dung config:"
-    cat $MT_PROXY_CONFIG | while read line; do
-        if [[ $line =~ secret= ]]; then
+    while IFS= read -r line; do
+        if [[ $line =~ ^secret= ]]; then
             log_info "  secret=*** (đã ẩn)"
-        else
+        elif [[ $line =~ ^[a-zA-Z_]+= ]]; then
             log_info "  $line"
         fi
-    done
+    done < "$MT_PROXY_CONFIG"
 }
 
 # Hàm tạo systemd service
