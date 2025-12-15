@@ -232,6 +232,11 @@ create_config() {
         exit 1
     fi
     
+    # Xóa config file cũ nếu có (để tránh các dòng log cũ)
+    if [ -f "$MT_PROXY_CONFIG" ]; then
+        rm -f "$MT_PROXY_CONFIG"
+    fi
+    
     # Tạo config file - MTProxy yêu cầu format đơn giản, không có comment
     # Format: secret=... port=... workers=... (nếu có) promo=... (nếu có)
     # Tạo file tạm trước, sau đó làm sạch và copy sang file chính
